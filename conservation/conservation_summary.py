@@ -71,7 +71,7 @@ def load_summary_table(summary_fpath):
 def load_records_table():
 
 def filter_analysis_subset(combined_fasta,records_tsv_fpath,UCSC_analysis_subset=[],NCBI_record_subset=[],
-                           filtered_outpath=""):
+                           filtered_outpath="",taxid_dict=None):
     """
 
     :param combined_fasta: bestNCBI alignment containing both all UCSC data and available selected NCBI records
@@ -80,21 +80,26 @@ def filter_analysis_subset(combined_fasta,records_tsv_fpath,UCSC_analysis_subset
     :param NCBI_record_subset: If provided, limits NCBI records to those ids in NCBI_record_subset
     :param filtered_outpath: optional parameter. If provided, writes records to this path. Otherwise writes to a tmp
     record file.
-    :return: record_df
+    :return: records_df
     """
     if not filtered_outpath:
         filtered_outpath = "tmp/filtered_analysis_set.fasta"
     if os.path.exists(records_tsv_fpath):
         records_df = pd.read_csv(records_tsv_fpath,sep='\t',index_col='UCSC_transcript_id')
-        NCBI_records = records_df.loc[records_df.index.str.contains('XP'),:]
-        UCSC_records = records_df.loc[~records_df.index.str.contains('XP'),:]
-    else:
-        if len(UCSC_analysis_subset) == 0:
-            UCSC_analysis_subset
-        filtered = fasta.UCSC_NCBI_generator(combined_fasta,combined_fasta,UCSC_analysis_subset,NCBI_record_subset)
+        NCBI_records = records_df.loc[~records_df.index.str.contains('ENST'),:]
+        UCSC_records = records_df.loc[records_df.index.str.contains('ENST'),:]
+        if len(NCBI_records) == len(NCBI_record_subset) and len(UCSC_records) == len(UCSC_analysis_subset):
+            #Don't need to repeat filtering step, write records to filtered_outpath and return
+            fasta.filter_fasta_infile(records_df.index,combined_fasta,outfile_path=filtered_outpath)
+            return records_df, filtered_outpath
+    filtered = fasta.UCSC_NCBI_generator(combined_fasta,combined_fasta,UCSC_analysis_subset,NCBI_record_subset)
+    records_df = fasta.load_UCSC_NCBI_df(combined_fasta,ncbi_taxid_dict=taxid_dict,
+                                         UCSC_subset=UCSC_analysis_subset,NCBI_subset=NCBI_record_subset)
+    dropped_seq = records_df.drop(columns=['sequence'])
 
 
-    return records_df
+
+    return records_df, filtered_outpath
 
 def overall_summary_table(config, dir_vars, xref_table, taxid_dict,
                           tid_subset=[], UCSC_analysis_subset=[],
