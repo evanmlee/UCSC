@@ -325,7 +325,7 @@ def map_AGS_geneIDs(xref_inpath, taxid_dict, results_outpath, errors_fpath,
     gid_columns_dict = dict(zip(taxid_dict.keys(),tax_gid_columns))
     if tax_subset:
         taxid_dict = {k:taxid_dict[k] for k in taxid_dict if k in tax_subset}
-        tax_gid_columns = {k:taxid_columns[k] for k in tax_gid_columns if k in tax_subset}
+        tax_gid_columns = {k:tax_gid_columns[k] for k in tax_gid_columns if k in tax_subset}
 
     xref_df = load_NCBI_xref_table(xref_inpath,gid_dtype='str')
 
@@ -369,7 +369,7 @@ def map_AGS_geneIDs(xref_inpath, taxid_dict, results_outpath, errors_fpath,
     return out_tsv_df
 
 
-def fetch_NCBI_protein_records(NCBI_gid_df, taxid_dict, orthologs_dir,
+def fetch_NCBI_protein_records(NCBI_gid_df, taxid_dict, dir_vars,
                                overwrite_fasta=[], NCBI_api_key='',tax_subset=None):
     """Downloads NCBI protein records for each NCBI Gene ID listed in AGS_gene_id_df.
 
@@ -378,6 +378,8 @@ def fetch_NCBI_protein_records(NCBI_gid_df, taxid_dict, orthologs_dir,
     to 1) match Gene ID to all corresponding Protein IDs and 2) download those Protein IDs into one fasta
     file, saved into NCBI_homology_dirpath
     """
+
+    orthologs_dir, orthologs_seq = dir_vars["orthologs_parent"],dir_vars["orthologs_seq"]
     try:
         ENTREZ_BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
         if NCBI_api_key:
@@ -410,7 +412,7 @@ def fetch_NCBI_protein_records(NCBI_gid_df, taxid_dict, orthologs_dir,
                 gid_col = "{0}_gid".format(taxid)
                 pid_col = "{0}_pids".format(taxid)
                 spec_gid = row[gid_col]
-                spec_dirpath = "{0}/{1}".format(orthologs_dir, taxid)
+                spec_dirpath = "{0}/{1}".format(orthologs_seq, taxid)
                 spec_fasta_fpath = "{0}/{1}.fasta".format(spec_dirpath, NCBI_gid)
                 #Check for initiating NCBI elink/efetch calls: If 1) spec_gid is not null and 2)
                 #Fastas fetch not done previously or is being forced by overwrite_fasta
@@ -453,12 +455,10 @@ def allseq_NCBI_UCSC_slignment(NCBI_xref_df, taxid_dict, dir_vars,gid_subset=[])
     """
     from fastaUtility import MSA_fpath_list, profile_MSA
     # Directory paths
-    dir_labels = ["orthologs_parent","UCSC_raw_parent","allNCBI_parent"]
-    orthologs_dir, ucsc_raw, allNCBI_parent = [dir_vars[label] for label in dir_labels]
+    dir_labels = ["orthologs_parent","orthologs_seq","UCSC_raw_parent","allNCBI_parent"]
+    orthologs_dir, orthologs_seq, ucsc_raw, allNCBI_parent = [dir_vars[label] for label in dir_labels]
     subdirs = ["NCBI_raw","NCBI_alignments","combined"]
     allNCBI_raw,allNCBI_alignments,allNCBI_combined = ["{0}/{1}".format(allNCBI_parent,sub) for sub in subdirs]
-    print(allNCBI_combined)
-    return
 
     for UCSC_tid, row in NCBI_xref_df.iterrows():
         NCBI_gid = row["NCBI_gid"]
@@ -470,7 +470,7 @@ def allseq_NCBI_UCSC_slignment(NCBI_xref_df, taxid_dict, dir_vars,gid_subset=[])
                 force_filewrite = True
         fpath_list = []
         for taxid in taxid_dict:
-            NCBI_fpath = "{0}/{1}/{2}.fasta".format(orthologs_dir, taxid, NCBI_gid)
+            NCBI_fpath = "{0}/{1}/{2}.fasta".format(orthologs_seq, taxid, NCBI_gid)
             if (os.path.exists(NCBI_fpath)):
                 fpath_list.append(NCBI_fpath)
         if len(fpath_list) > 0:
@@ -501,23 +501,6 @@ def main():
     orthologs_dir = dir_vars["orthologs_parent"]
     reorg_dir, dataset_name = dir_vars["reorg_parent"],dir_vars["dataset_name"]
 
-
-    format_sql_check = False
-    if format_sql_check:
-        #format orthologs table
-        formatted_local_fpath = "{0}/knownCanonical_orthologs_local.tsv".format(orthologs_dir)
-        formatted_df, absent_taxids = format_orthologs_sql(dir_vars,taxid_dict,formatted_local_fpath)
-        display(formatted_df)
-
-    id_mismatch_gids = False
-    if id_mismatch_gids:
-        valid_match_pat = "^10|^11"
-        mismatch_df = ortholog_patmatch(sus_ortho_df,match_pat,how='all',comp=True)
-        with pd.option_context('display.max_columns',None):
-            display(mismatch_df)
-        suspect_entries_fpath = "{0}/NCBI_orthologs_suspect.tsv".format(orthologs_dir)
-        mismatch_df.to_csv(suspect_entries_fpath,sep='\t')
-
     formatted_local_fpath = "{0}/knownCanonical_orthologs_local.tsv".format(orthologs_dir)
     local_orthologs_fpath = formatted_local_fpath
     API_orthologs_fpath = "{0}/NCBI_orthologs_API.tsv".format(orthologs_dir)
@@ -525,6 +508,23 @@ def main():
     dataset_id = dir_vars["dataset_identifier"]
     final_errors_fpath = "summary/{0}/errors.tsv".format(dataset_id)
     final_orthologs_fpath = "{0}/orthologs_final.tsv".format(orthologs_dir)
+    sus_fpath = "{0}/NCBI_orthologs_031320.tsv".format(orthologs_dir)
+
+    format_sql_check = False
+    if format_sql_check:
+        # format orthologs table
+        formatted_df, absent_taxids = format_orthologs_sql(dir_vars, taxid_dict, formatted_local_fpath)
+        display(formatted_df)
+
+    id_mismatch_gids = False
+    if id_mismatch_gids:
+        valid_match_pat = "^10|^11"
+        sus_ortho_df = load_orthologs_table()
+        mismatch_df = ortholog_patmatch(sus_ortho_df, valid_match_pat, how='all', comp=True)
+        with pd.option_context('display.max_columns', None):
+            display(mismatch_df)
+        suspect_entries_fpath = "{0}/NCBI_orthologs_suspect.tsv".format(orthologs_dir)
+        mismatch_df.to_csv(suspect_entries_fpath, sep='\t')
 
     compile_final_orthologs = False
     if compile_final_orthologs:
@@ -534,7 +534,6 @@ def main():
 
     check_diff = True
     if check_diff:
-        sus_fpath = "{0}/NCBI_orthologs_031320.tsv".format(orthologs_dir)
         # diff_df = _compare_formatted_orthologs(sus_fpath,API_orthologs_fpath)
         diff_df = _compare_formatted_orthologs(sus_fpath,final_orthologs_fpath)
         display(diff_df)
@@ -555,7 +554,7 @@ def main():
     update_pids = False
     if update_pids:
         api_key = config["DIRECTORY"]["NCBIAPIKey"]
-        pid_df = fetch_NCBI_protein_records(final_orthologs,taxid_dict,orthologs_dir,
+        pid_df = fetch_NCBI_protein_records(final_orthologs,taxid_dict,dir_vars,
                                         overwrite_fasta=diff_df.index,NCBI_api_key=api_key)
 
     process_allNCBI = True
