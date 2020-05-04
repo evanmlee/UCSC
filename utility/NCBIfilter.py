@@ -110,16 +110,12 @@ def filter_allNCBI_data():
         lm_df = pd.read_csv(length_metrics_fpath, sep='\t', index_col="UCSC_transcript_id", dtype=field_conv_dict)
 
     non_empty_orthoIDs = ortholog_id_table.dropna(how='all')
-    # print(len(ortholog_id_table))
-    # print(len(non_empty_orthoIDs))
-    # no_NCBI_IDs = NCBI_gid_table.loc[~(NCBI_gid_table["NCBI_gid"].isin(non_empty_orthoIDs.index)), :]
     some_NCBI_IDs = NCBI_gid_table.loc[(NCBI_gid_table["NCBI_gid"].isin(non_empty_orthoIDs.index)), :]
 
-    for UCSC_tid, row in some_NCBI_IDs.iterrows():  # NCBI_gid_table.iterrows():
+    for UCSC_tid, row in some_NCBI_IDs.iterrows():
         NCBI_gid = row["NCBI_gid"]
         best_NCBI_fpath = "{0}/NCBI_alignments/{1}.fasta".format(bestNCBI_parent, NCBI_gid)
         if not os.path.exists(best_NCBI_fpath):
-            # print(best_NCBI_fpath)
             lm_df.loc[UCSC_tid, "NCBI_gid"] = NCBI_gid
             try:
                 length_metrics = select_NCBI_records(dir_vars, taxid_dict, UCSC_tid, NCBI_gid)

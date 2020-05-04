@@ -359,12 +359,14 @@ def parse_NCBI_row(fasta,exact_spec_name_re,spec_name_dict):
     if spec_name_match:
         matched_name = spec_name_match.groups()[0]
         # spec_name: Exact string match to
-        spec_name = re.search(exact_spec_name_re, matched_name).groups()[0]
-        taxid = spec_name_dict[spec_name]
+        exact_name_match = re.search(exact_spec_name_re, matched_name)
+        if not exact_name_match:
+            spec_name, taxid = "",""
+        else:
+            spec_name = exact_name_match.groups()[0]
+            taxid = spec_name_dict[spec_name]
     else:
-        spec_name = ""
-        taxid = ""
-
+        spec_name,taxid = "",""
     row_vals = [desc_remaining, spec_name, taxid, fasta_length, fasta_seq]
     row = dict(zip(column_list, row_vals))
     return pd.Series(data=row,name=fasta.id)
@@ -378,6 +380,35 @@ def UCSC_fasta_df(fasta_inpath):
         fasta_df.loc[fasta.id, :] = ucsc_row
     fasta_df.index.name = "record_id"
     return fasta_df
+
+def partition_UCSC_by_clade(fasta_df,clade):
+    """
+    :param fasta_df: Records DataFrame to filter data from
+    :param (str) clade:
+    :return:
+    """
+    clade = clade.lower()
+    clades = ['mammalia','boreoeutheria','euarchontoglires','primates']
+    pos_tups = [(0,62),(0,51),(0,26),(0,12)]
+    idx_dict = dict(zip(clades,pos_tups))
+    if clade not in clades:
+        raise ValueError("Please specify accepted clade value (mammalia, boreoeutheria, euarchontoglires, primates.")
+    else:
+        low,high = idx_dict[clade]
+    incl_df,rest_df = partition_UCSC_by_position(fasta_df,low,high)
+    return incl_df, rest_df
+
+def partition_UCSC_by_position(fasta_df,low=0,high=100):
+    """Partition fasta_df based on int_idx positions in the UCSC_tax_table. Returns incl and rest record DataFrames."""
+    #Filter DataFrame to only UCSC formatted records
+    fasta_df = fasta_df.loc[fasta_df.index.str.contains("ENST"),:]
+    ucsc_tax_table_incl = ucsc_tax_table.iloc[low:high, :]
+    ucsc_tax_table_rest = ucsc_tax_table.iloc[high:, :]
+    incl_tids, rest_tids = ucsc_tax_table_incl['NCBI_taxid'], ucsc_tax_table_rest['NCBI_taxid']
+    incl_df = fasta_df.loc[fasta_df['NCBI_taxid'].isin(incl_tids), :]
+    rest_df = fasta_df.loc[fasta_df['NCBI_taxid'].isin(rest_tids), :]
+    return incl_df, rest_df
+
 
 def parse_UCSC_row(fasta):
     column_list = ["description", "species_name", "NCBI_taxid","length", "sequence"]
@@ -398,7 +429,7 @@ def parse_UCSC_row(fasta):
     row = dict(zip(column_list, row_vals))
     return pd.Series(data=row,name=fasta.id)
 
-def load_UCSC_NCBI_df(combined_fpath,ncbi_taxid_dict=None,UCSC_subset=[],NCBI_subset=[]):
+def load_UCSC_NCBI_df(combined_fpath,ncbi_taxid_dict={},UCSC_subset=[],NCBI_subset=[]):
     if not ncbi_taxid_dict:
         ncbi_taxid_dict = table_taxid_dict
     tids, spec_names = list(ncbi_taxid_dict.keys()),[ncbi_taxid_dict[k] for k in ncbi_taxid_dict]
@@ -423,8 +454,8 @@ def load_UCSC_NCBI_df(combined_fpath,ncbi_taxid_dict=None,UCSC_subset=[],NCBI_su
         elif fasta.id in NCBI_subset:
             ncbi_row = parse_NCBI_row(fasta,exact_spec_name_re,spec_name_dict)
             fasta_df.loc[fasta.id, :] = ncbi_row
+    fasta_df.index.name = "record_id"
     return fasta_df
-
 
 def load_UCSC_tax_table(tsv_fpath="config/UCSC_tax.tsv"):
     tax_table = pd.read_csv(tsv_fpath,sep='\t',index_col='UCSC_spec_idx')
@@ -440,4 +471,3 @@ def load_NCBI_tax_table(tsv_fpath="config/NCBI_analysis_tax.txt"):
 
 ucsc_tax_table = load_UCSC_tax_table()
 ncbi_tax_table, table_taxid_dict = load_NCBI_tax_table()
-

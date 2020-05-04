@@ -3,9 +3,10 @@ import pandas as pd
 import numpy as np
 from IPython.display import display
 
-from conservation import analysis_calc as ac
+from conservation import analysis_calc as ac, analysis_record_filter as ar_filt
 from utility import UCSCerrors
 from utility import fastaUtility as fasta
+
 
 
 def gene_summary_table(align_df, ncbi_idx, test_idx,blos_df, display_summary=False,drop_NCBI=True,
@@ -72,58 +73,6 @@ def load_records_table():
     #TODO
     pass
 
-def drop_redundant_UCSC_records(combined_records_df,ncbi_index):
-    """For a given NCBI taxid, exclude UCSC from uniqueness/ conservation analysis from species which are either
-    identical or close evolutionary relatives that likely contain similar adaptive residues to ncbi_taxid species
-    (i.e. 13LGS and AGS). If provided NCBI taxid is not in DROPPED_TAXIDS, returns UCSC_records_df.
-    :param combined_records_df: Records DataFrame containing UCSC record data and NCBI record(s)
-    :param ncbi_index: Index or index value that corresponds to NCBI species for analysis. Should correspond to only
-    one record (if multiple given, first record present
-    """
-    DROPPED_TAXIDS = {9999:[43179],10181:[10181]}
-    ncbi_taxid = combined_records_df.loc[ncbi_index,'NCBI_taxid'].iloc[0]
-    if ncbi_taxid in DROPPED_TAXIDS:
-        dropped_set = DROPPED_TAXIDS[ncbi_taxid]
-        ucsc_df,ncbi_df = combined_records_df.loc[~combined_records_df.index.isin(ncbi_index),:], \
-                            combined_records_df.loc[combined_records_df.index.isin(ncbi_index),:]
-        filtered_ucsc = ucsc_df.loc[~ucsc_df['NCBI_taxid'].isin(dropped_set),:]
-        filtered = filtered_ucsc.append(ncbi_df)
-        return filtered
-    else:
-        return combined_records_df
-
-def filter_analysis_subset(combined_fasta,records_tsv_fpath,UCSC_analysis_subset=[],NCBI_record_subset=[],
-                           filtered_outpath="tmp/filtered_analysis_set.fasta",taxid_dict=None,
-                           drop_redundant=True):
-    """Given subsets of UCSC and NCBI records to include in conservation_analysis, writes filtered sequence data to
-    filtered_outpath and returns a DataFrame with filtered record information and the path to the sequence file.
-
-    :param combined_fasta: bestNCBI alignment containing both all UCSC data and available selected NCBI records
-    :param records_tsv_fpath: File path to tsv table containing information on records. If exists, reads records from
-    file path and filters records in records_df to filtered_outpath.
-    :param UCSC_analysis_subset: If provided, limits UCSC records to those ids in UCSC_record_subset
-    :param NCBI_record_subset: If provided, limits NCBI records to those ids in NCBI_record_subset
-    :param filtered_outpath: optional parameter. If provided, writes filtered fasta to this path. Otherwise writes to
-    a tmp record file.
-    :return: records_df: DataFrame containing record information represented in filtered sequence set
-    :return: filtered_outpath: Outpath to which filtered records were written
-    """
-    if os.path.exists(records_tsv_fpath):
-        records_df = pd.read_csv(records_tsv_fpath,sep='\t',index_col='record_id')
-        UCSC_records = records_df.loc[records_df.index.str.contains('ENST'),:]
-        NCBI_records = records_df.loc[~records_df.index.str.contains('ENST'), :]
-        ncbi_taxid = NCBI_records['NCBI_taxid'].iloc[0]
-        if len(NCBI_records) == len(NCBI_record_subset) and len(UCSC_records) == len(UCSC_analysis_subset):
-            #Don't need to repeat filtering step, write records to filtered_outpath and return
-            fasta.filter_fasta_infile(records_df.index,combined_fasta,outfile_path=filtered_outpath)
-            return records_df, filtered_outpath
-    records_df = fasta.load_UCSC_NCBI_df(combined_fasta,ncbi_taxid_dict=taxid_dict,
-                                         UCSC_subset=UCSC_analysis_subset,NCBI_subset=NCBI_record_subset)
-    records_df.drop(columns=['sequence'],inplace=True)
-    records_df.to_csv(records_tsv_fpath,sep='\t')
-    fasta.filter_fasta_infile(records_df.index,combined_fasta,outfile_path=filtered_outpath)
-    return records_df, filtered_outpath
-
 def overall_summary_table(config, dir_vars, xref_table, taxid_dict,
                           tid_subset=[], UCSC_analysis_subset=[],
                           use_jsd_gap_penalty=True,force_recalc=False):
@@ -176,9 +125,11 @@ def overall_summary_table(config, dir_vars, xref_table, taxid_dict,
                     ncbi_idx = combined_fasta_df.loc[combined_fasta_df['NCBI_taxid']==ncbi_taxid,:].index
                     #Default behavior: Drop other NCBI records when calculating unique substitutions for individual
                     #NCBI species
-                    records_df, filtered_aln = filter_analysis_subset(combined_fasta_fpath,out_records_fpath,
-                                                                UCSC_analysis_subset,NCBI_record_subset=ncbi_idx)
-                    align_df = fasta.align_fasta_to_df(filtered_aln)
+                    records_df, filtered_aln_path = ar_filt.filter_analysis_subset(combined_fasta_fpath,out_records_fpath,
+                                                                UCSC_analysis_subset,NCBI_record_subset=ncbi_idx,
+                                                                taxid_dict=taxid_dict,drop_redundant=True,
+                                                                      drop_ncbi_from_ucsc=True)
+                    align_df = fasta.align_fasta_to_df(filtered_aln_path)
                     summary_df = gene_summary_table(align_df,ncbi_idx,test_idx=ncbi_idx,drop_NCBI=False,
                                                     summary_table_outpath=out_summary_fpath,use_jsd_gap_penalty=True)
                 else:
