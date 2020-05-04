@@ -21,9 +21,7 @@ import os
 
 from IPython.display import display
 from collections import OrderedDict
-from SSanalysis import JSDcalc
-from SSutility.SSerrors import SequenceAnalysisError
-from SSutility.SSfasta import align_fasta_to_df
+from conservation import jsd_calc
 
 def gen_blos_df():
     from Bio.SubsMat.MatrixInfo import blosum62
@@ -129,9 +127,9 @@ def generate_jsd_series(test_idx,align_df,
     else:
         jsd_df = align_df.drop(test_idx,axis=0)
     jsd_nd = jsd_df.values
-    weights = JSDcalc.calculate_sequence_weights(jsd_nd)
+    weights = jsd_calc.calculate_sequence_weights(jsd_nd)
     for i,col in enumerate(jsd_nd.T):
-        jsd = JSDcalc.JSD(col,blosum62_bg,weights,aas,use_gap_penalty=use_gap_penalty)
+        jsd = jsd_calc.JSD(col,blosum62_bg,weights,aas,use_gap_penalty=use_gap_penalty)
         # if i==42:
         #     print(use_gap_penalty)
         #     print(jsd)

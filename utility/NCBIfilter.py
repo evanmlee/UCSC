@@ -1,19 +1,19 @@
 import pandas as pd
 import numpy as np
 import importlib
-import directoryUtility
+from utility import directoryUtility
 importlib.reload(directoryUtility)
 from IPython.display import display
 pd.options.display.max_columns = None
-from fastaUtility import UCSC_fasta_df, NCBI_fasta_df, filter_fasta_infile, min_dist_spec_record, construct_id_dm
+from utility.fastaUtility import UCSC_fasta_df, NCBI_fasta_df, filter_fasta_infile, min_dist_spec_record, construct_id_dm
 import os
-import NCBI_homology
+from query import NCBI_homology
 
 def load_transcript_table(transcripts_fpath):
     transcript_table = pd.read_csv(transcripts_fpath,sep='\t',index_col="UCSC_transcript_id")
     return transcript_table
 
-def select_NCBI_records(dir_vars,tax_id_dict,UCSC_tid,NCBI_gid,selection="identity"):
+def select_NCBI_records(dir_vars,taxid_dict,UCSC_tid,NCBI_gid,selection="identity"):
     from IPython.display import display
     UCSC_parent,allNCBI_parent,bestNCBI_parent = [dir_vars[k] for k in ["UCSC_raw_parent","allNCBI_parent",
                                                                         "bestNCBI_parent"]]
@@ -23,7 +23,7 @@ def select_NCBI_records(dir_vars,tax_id_dict,UCSC_tid,NCBI_gid,selection="identi
     combined_all_aln_fpath = "{0}/combined/{1}.fasta".format(allNCBI_parent,UCSC_tid)
 
     UCSC_df = UCSC_fasta_df(raw_UCSC_fpath)
-    allNCBI_df = NCBI_fasta_df(NCBI_all_aln_fpath,tax_id_dict)
+    allNCBI_df = NCBI_fasta_df(NCBI_all_aln_fpath,taxid_dict=taxid_dict)
 
     CLOSEST_EVO = {'9999':['mm10','rn6','speTri2'],'29073':['ailMel1','canFam3'],
                    '10181':['hetGla2','mm10','rn6'], '9994':['mm10','rn6','speTri2']}
@@ -34,7 +34,7 @@ def select_NCBI_records(dir_vars,tax_id_dict,UCSC_tid,NCBI_gid,selection="identi
     id_dm, align_srs = construct_id_dm(allseq_df,combined_all_aln_fpath,aligned=True)
     bestNCBI_ids = []
     bestNCBI_dict = {}
-    for taxid in tax_id_dict:
+    for taxid in taxid_dict:
         NCBI_tid_df = allNCBI_df.loc[allNCBI_df["NCBI_taxid"]==taxid,:]
         #Skip if no taxid records in allNCBI_df (ie no records for that species)
         if not NCBI_tid_df.empty:
@@ -52,7 +52,6 @@ def select_NCBI_records(dir_vars,tax_id_dict,UCSC_tid,NCBI_gid,selection="identi
             bestNCBI_dict[taxid] = md_row
 
     bestNCBI_df = allNCBI_df.loc[bestNCBI_ids]
-    # display(bestNCBI_df)
     bestNCBI_aln_fpath = "{0}/NCBI_alignments/{1}.fasta".format(bestNCBI_parent,NCBI_gid)
     bestNCBI_all_fpath = "{0}/combined/{1}.fasta".format(bestNCBI_parent,UCSC_tid)
     if True:#not os.path.exists(bestNCBI_aln_fpath): (os.path check now in outer function in UCSC_filter)
