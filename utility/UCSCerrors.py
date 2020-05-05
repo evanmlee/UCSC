@@ -1,3 +1,7 @@
+import os
+import pandas as pd
+
+
 class Error(Exception):
     pass
 class DataFileError(Error):
@@ -65,15 +69,18 @@ def load_errors(errors_fpath,error_type=""):
     :param errors_fpath: file path to errors.tsv which logs errors raised in acquisition/ analysis process. If path
     doesn't exist, returns check_error_file as False and an empty DataFrame (which won't be accessed).
     :param error_type: if provided, will only check against logged errors of given type
-    :return: check_error_file: boolean on whether errors_df exists
+    :return: check_error_df: boolean on whether errors_df exists
     :return: errors_df: if check_error, returns file loaded from
     """
     if os.path.exists(errors_fpath):
         errors_df = pd.read_csv(errors_fpath, delimiter='\t',index_col=0)
         if error_type:
             errors_df = errors_df.loc[errors_df['error_type'] == error_type, :]
-        check_error_file = True
-        return check_error_file, errors_df
+        if len(errors_df) == 0:
+            check_error_df = False
+        else:
+            check_error_df = True
+        return check_error_df, errors_df
     else:
-        check_error_file = False
-        return check_error_file, pd.DataFrame(columns=['gene_symbol','error_type','error_code','error_message'])
+        check_error_df = False
+        return check_error_df, pd.DataFrame(columns=['gene_symbol','error_type','error_code','error_message'])

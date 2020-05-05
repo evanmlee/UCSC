@@ -8,6 +8,8 @@ import re
 from collections import OrderedDict
 import warnings
 
+###Record Filtering###
+
 def ordered_record_generator(fpath,ordered_ids):
     """Generates Seq records from fpath, limited to ordered_ids if provided. Generator order is order in ordered_ids.
     Internally tracks yielded record ids to eliminate duplicates.
@@ -118,6 +120,8 @@ def filter_fasta_infile(filtered_ids, infile_path, outfile_path=None, ordered=Fa
         filtered_srs[fasta.id] = str(fasta.seq)
     return filtered_srs
 
+###Profile alignment and NCBI record compilation functions###
+
 
 def profile_MSA(in1_fpath, in2_fpath, out_fpath):
     """Generates profile-profile alignment of records from in1_fpath and in2_fpath and writes to out_fpath
@@ -172,14 +176,6 @@ def MSA_fpath_list(fpath_list, combined_outpath, aligned_outpath,aln_program='mu
         args = ['kalign']
         subprocess.run(args=args, stdin=combined_outpath, stdout=aligned_outpath, stderr=subprocess.PIPE, text=True)
 
-def fasta_to_srs(fasta_path):
-    fasta_seqs = SeqIO.parse(fasta_path, 'fasta')
-    id_seq_map = OrderedDict()
-    for fasta in fasta_seqs:
-        record_id = fasta.id
-        seq = str(fasta.seq)
-        id_seq_map[record_id] = seq
-    return pd.Series(name="seq", data=id_seq_map)
 
 def construct_id_dm(seq_df, seq_fpath, align_outpath="tmp/iddm_align.fasta", ordered=False, aligned=False):
     """Constructs an np.ndarray corresponding to the identity distance matrix of records in seq_df. Different from
@@ -264,7 +260,7 @@ def srs_to_fasta(seq_srs, outfile_path):
     records = record_generator(seq_srs)
     SeqIO.write(records, outfile_path, "fasta")
 
-def fasta_to_srs(fasta_path):
+def fasta_to_srs(fasta_path,ucsc_flag=False):
     #Creates series mapping record id to sequence from fasta_path
     with open(fasta_path) as fasta_f:
         fasta_seqs = SeqIO.parse(fasta_f, 'fasta')
@@ -272,6 +268,8 @@ def fasta_to_srs(fasta_path):
         for fasta in fasta_seqs:
             record_id = fasta.id
             seq = str(fasta.seq)
+            if ucsc_flag:
+                seq = seq.replace('Z','-')
             id_seq_map[record_id] = seq
         return pd.Series(name="seq", data=id_seq_map)
 
@@ -285,8 +283,8 @@ def align_srs_to_df(align_srs):
     align_df.columns += 1
     return align_df
 
-def align_fasta_to_df(fasta_path):
-    align_srs = fasta_to_srs(fasta_path)
+def align_fasta_to_df(fasta_path,ucsc_flag=False):
+    align_srs = fasta_to_srs(fasta_path,ucsc_flag=ucsc_flag)
     align_df = align_srs_to_df(align_srs)
     return align_df
 
