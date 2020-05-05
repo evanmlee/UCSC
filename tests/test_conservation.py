@@ -4,8 +4,12 @@ import pandas as pd
 import os
 from IPython.display import display
 from conservation import analysis_record_filter as ar_filt
-from conservation import conservation_summary as ar_filt
+from conservation import conservation_summary as cs
 from Bio import SeqIO
+from conservation.analysis_calc import blos_df
+
+TEST_ANALYSIS_DICT = {9999: 'Urocitellus parryii', 10181: 'Heterocephalus glaber', 29073: 'Ursus maritimus',
+                        9994: 'Marmota marmota marmota'}
 
 class ConservationTest(unittest.TestCase):
 
@@ -24,11 +28,10 @@ class ConservationTest(unittest.TestCase):
         self.assertFalse(os.path.exists(test_filtered_path))
         self.assertTrue(10181 in boreo_df["NCBI_taxid"].unique())
 
-        test_analysis_taxids = {9999:'Urocitellus parryii',10181:'Heterocephalus glaber',29073:'Ursus maritimus',
-                                9994:'Marmota marmota marmota'}
+
         records_df, filtered_outpath = ar_filt.filter_analysis_subset(test_combined_fpath,test_records_fpath,
                                                         UCSC_analysis_subset=boreo_df.index,NCBI_record_subset=ncbi_idx,
-                                                        filtered_outpath=test_filtered_path,taxid_dict=test_analysis_taxids)
+                                                        filtered_outpath=test_filtered_path,taxid_dict=TEST_ANALYSIS_DICT)
         self.assertTrue(os.path.exists(filtered_outpath))
         self.assertTrue(29073 not in records_df["NCBI_taxid"].unique())
         self.assertTrue(10181 not in records_df["NCBI_taxid"].unique())
@@ -57,7 +60,7 @@ class ConservationTest(unittest.TestCase):
                                 9994:'Marmota marmota marmota'}
         records_df, filtered_outpath = ar_filt.filter_analysis_subset(test_combined_fpath,test_records_fpath,
                                                         UCSC_analysis_subset=boreo_df.index,NCBI_record_subset=ncbi_idx,
-                                                        filtered_outpath=test_filtered_path,taxid_dict=test_analysis_taxids)
+                                                        filtered_outpath=test_filtered_path,taxid_dict=TEST_ANALYSIS_DICT)
         self.assertTrue(os.path.exists(filtered_outpath))
         self.assertTrue(29073 not in records_df["NCBI_taxid"].unique())
         self.assertTrue(len(records_df.loc[records_df['NCBI_taxid']==10181,:]) == 1)
@@ -101,6 +104,77 @@ class ConservationTest(unittest.TestCase):
         self.assertFalse(43179 in redundant_filtered['NCBI_taxid'].unique())
         for idx_val in ncbi_idx:
             self.assertTrue(idx_val in redundant_filtered.index)
+
+    def test_gene_summary(self):
+
+        test_combined_fpath = "tests/test_data/combined/ENST00000002596.6.fasta"
+        test_out_records_fpath = "tests/tmp/ENST00000002596.6_9999records_gstest.tsv"
+        test_out_summary_fpath = "tests/tmp/ENST00000002596.6_9999summary_gstest.tsv"
+        combined_fasta_df = fautil.load_UCSC_NCBI_df(test_combined_fpath, TEST_ANALYSIS_DICT)
+        ncbi_taxid = 9999
+        ncbi_partition = (combined_fasta_df['NCBI_taxid'] == ncbi_taxid) & \
+                         ~(combined_fasta_df.index.str.contains("ENST"))
+        ncbi_idx = combined_fasta_df.loc[ncbi_partition, :].index
+
+        boreo_df, rest_df = fautil.partition_UCSC_by_clade(combined_fasta_df, 'boreoeutheria')
+        UCSC_test_subset = boreo_df.index
+        records_df, filtered_aln_path = ar_filt.filter_analysis_subset(test_combined_fpath, test_out_records_fpath,
+                                                                       UCSC_test_subset,
+                                                                       NCBI_record_subset=ncbi_idx,
+                                                                       taxid_dict=TEST_ANALYSIS_DICT, drop_redundant=True,
+                                                                       drop_ncbi_from_ucsc=True)
+        align_df = fautil.align_fasta_to_df(filtered_aln_path,ucsc_flag=True)
+        summary_df = cs.gene_summary_table(align_df, ncbi_idx, test_idx=ncbi_idx, blos_df=blos_df,drop_NCBI=False,
+                                        summary_table_outpath=test_out_summary_fpath,
+                                        use_jsd_gap_penalty=True)
+
+
+    def test_length_metrics_filter(self):
+        import io
+        import contextlib
+        import numpy as np
+        best_NCBI_parent = "combined_alignments/hg38AA_knownCanonical/4species1/bestNCBI"
+        test_dir_vars = {'bestNCBI_parent':best_NCBI_parent}
+        lm_fpath = "combined_alignments/hg38AA_knownCanonical/4species1/length_metrics.tsv"
+        suppl_fpath = "combined_alignments/hg38AA_knownCanonical/4species1/length_metrics_suppl.tsv"
+        out_buf = io.StringIO()
+        with contextlib.redirect_stdout(out_buf):
+            force_overwrite = False
+            skip_ovewrwrite = os.path.exists(suppl_fpath) and not force_overwrite
+            suppl_lm_fpath = ar_filt.length_metric_supplement(TEST_ANALYSIS_DICT,test_dir_vars,lm_fpath,
+                                                          force_overwrite=force_overwrite,suppl_lm_df_fpath=suppl_fpath)
+            if skip_ovewrwrite:
+                check_output_msg = "Run with force_overwrite=True if recalculation desired."
+                self.assertIn(check_output_msg,out_buf.getvalue())
+                print("Successfully pre-checked file")
+            else:
+                self.assertTrue(os.path.exists(suppl_lm_fpath))
+
+        suppl_lm_df = pd.read_csv(suppl_lm_fpath, sep='\t', index_col=0)
+        ncbi_col_labels = ['9999_length', '10181_length', '29073_length', '9994_length']
+
+        row_gen = suppl_lm_df.iterrows()
+        for idx, row in row_gen:
+            try:
+                ncbi_cols = row[ncbi_col_labels]
+                precalc_bn_mean, precalc_bn_med = row['bestncbi_mean'], row['bestncbi_median']
+                recalc_bn_med = np.nanmedian(ncbi_cols)
+                recalc_bn_med = np.nanmedian(ncbi_cols)
+                self.assertTrue(recalc_bn_med == precalc_bn_med)
+                self.assertTrue(precalc_bn_mean == precalc_bn_mean)
+            except AssertionError as ae:
+                display(row)
+                display(ncbi_cols)
+                raise ae
+
+    def test_lm_filter(self):
+        best_NCBI_parent = "combined_alignments/hg38AA_knownCanonical/4species1/bestNCBI"
+        test_dir_vars = {'bestNCBI_parent': best_NCBI_parent}
+        lm_fpath = "combined_alignments/hg38AA_knownCanonical/4species1/length_metrics.tsv"
+        ar_filt.length_metric_filter(TEST_ANALYSIS_DICT,test_dir_vars,lm_fpath)
+
+    def test_overall_summary(self):
+        test_combined_fpath = "tests/test_data/combined/ENST00000002596.6.fasta"
 
 
 if __name__ == "__main__":
