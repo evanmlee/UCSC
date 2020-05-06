@@ -24,15 +24,15 @@ class NCBIQueryError(Error):
         self.message = message
 
 def write_errors(errors_fpath,tid,error):
-    """Maintains a tsv/ DataFrame of gene symbols and errors generated during a run.
+    """Maintains a tsv/ DataFrame of transcript_ids and errors generated during a run.
     """
     etype,ecode,emsg = error.error_type,error.code,error.message
     if os.path.exists(errors_fpath):
         check_ef,errors_df = load_errors(errors_fpath)
         if tid in errors_df['tid'].unique():
-            gene_error_df = errors_df.loc[errors_df['tid']==tid,:]
-            if gene_error_df['error_message'].str.contains(emsg).any() or \
-                (etype == 'SequenceDataError' and gene_error_df['error_type'].str.contains(etype).any()):
+            tid_error_df = errors_df.loc[errors_df['tid']==tid,:]
+            if tid_error_df['error_message'].str.contains(emsg).any() or \
+                (etype == 'SequenceDataError' and tid_error_df['error_type'].str.contains(etype).any()):
                 print_errors(errors_df,tid,message=emsg)
                 return
     else:
@@ -59,8 +59,8 @@ def print_errors(errors_df,tid,message=None,error_type=None):
     elif error_type and error_rows['error_type'].str.contains(error_type).any():
         error_rows = error_rows.loc[error_rows['error_type'] == error_type, :]
     for idx,error_row in error_rows.iterrows():
-        genename, error_type, error_code, error_msg = error_row.values
-        print("{0}\t{1}\t{2}\t{3}".format(genename, error_type, error_code, error_msg))
+        tid, error_type, error_code, error_msg = error_row.values
+        print("{0}\t{1}\t{2}\t{3}".format(tid, error_type, error_code, error_msg))
 
 def load_errors(errors_fpath,error_type=""):
     """Loads errors_df from specified file path. Used to prevent repeat operations that generate errors (ie failed
