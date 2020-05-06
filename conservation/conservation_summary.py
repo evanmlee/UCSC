@@ -79,7 +79,7 @@ def load_summary_table(summary_fpath):
 def overall_summary_table(dir_vars, xref_table, taxid_dict,
                           tid_subset=[], UCSC_analysis_subset=[],
                           use_jsd_gap_penalty=True,force_recalc=False,
-                          modified_outpath=""):
+                          modified_outpath="",length_checks_fpath=""):
     """Calculates summary analysis statistics for every gene symbol in gene_symbols.
 
     :param (dict) dir_vars: Contains paths for run-specific directories, see directoryUtility.
@@ -92,6 +92,8 @@ def overall_summary_table(dir_vars, xref_table, taxid_dict,
     the change and after.
     :param force_recalc: If True, recalculates and rewrites all summary statistic data.
     :param modified_outpath: If provided, writes overall summary table to modified_outpath.
+    :param length_checks_fpath: If provided, reads booolean table from provided path and only runs gene_summary table
+    for records which passed length checks (see analysis_record_filter.py)
     :return: None. Writes individual gene summary tables to appropriate output subdirectories and overall summary table
     to [run_name]/summary/overall_summary.tsv Overall_summary table contains new columns corresponding to 1) gene symbol,
     2) gene-specific MSA position, 3, 4) Unique Substitution Wide Z-scores for JSD and Test-Outgroup BLOSUM
@@ -103,7 +105,12 @@ def overall_summary_table(dir_vars, xref_table, taxid_dict,
     errors_fpath = "{0}/errors.tsv".format(summary_run_dir)
     check_qes, query_error_df = load_errors(errors_fpath,error_type="NCBIQueryError")
     check_aes,analysis_error_df = load_errors(errors_fpath,error_type="SequenceAnalysisError")
-
+    #Read length checks information if necessary
+    if length_checks_fpath:
+        length_checks = True
+        lc_df = pd.read_csv(length_checks_fpath,sep='\t',index_col=0)
+    else:
+        length_checks = False
     #Columns for overall summary table
     overall_summary_col_labels = ['Transcript ID','Gene','MSA Position','Test Species Position', 'Test Variant',
                                   'Test Variant Count', 'Outgroup Variant', 'Outgroup Variant Count',
@@ -116,7 +123,9 @@ def overall_summary_table(dir_vars, xref_table, taxid_dict,
         taxid_parent_dir = "{0}/conservation/{1}".format(summary_run_dir,ncbi_taxid)
         overall_df = pd.DataFrame(columns=overall_summary_col_labels)
         overall_summary_fpath = "{0}/conservation/{1}_summary.tsv".format(summary_run_dir,ncbi_taxid)
-
+        if length_checks:
+            col_label = "{0}_check".format(ncbi_taxid)
+            lc_col = lc_df[col_label]
         for tid,row in xref_table.iterrows():
             ncbi_hgid,hgnc_symbol = row['NCBI_gid'], row['HGNC_symbol']
             out_summary_fpath = "{0}/{1}/{1}_summary.tsv".format(taxid_parent_dir, tid)
@@ -124,13 +133,15 @@ def overall_summary_table(dir_vars, xref_table, taxid_dict,
             combined_fasta_fpath = "{0}/combined/{1}.fasta".format(bestNCBI_dir, tid)
 
             if not os.path.exists(out_summary_fpath) or force_recalc:
-                if check_qes and tid in query_error_df['gene'].unique():
+                if check_qes and tid in query_error_df['tid'].unique():
                     print("Transcript ID {0} failed to fetch NCBI orthologs".format(tid))
                     continue
-                if check_aes and tid in analysis_error_df['gene'].unique():
+                if check_aes and tid in analysis_error_df['tid'].unique():
                     print_errors(analysis_error_df,tid,error_type="SequenceAnalysisError")
                     continue
-                if (len(tid_subset) > 0 and tid in tid_subset) or len(tid_subset) == 0:
+                #Check for tid_subset and length_checls
+                if ((len(tid_subset) > 0 and tid in tid_subset) or len(tid_subset) == 0) \
+                        and (length_checks and lc_col[tid]):
                     combined_fasta_df = fasta.load_UCSC_NCBI_df(combined_fasta_fpath,taxid_dict)
                     # Default behavior: Drop other NCBI records when calculating unique substitutions for individual
                     # NCBI species

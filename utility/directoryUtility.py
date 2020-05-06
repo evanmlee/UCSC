@@ -157,9 +157,4 @@ def ortholog_file_cleanup(ortholog_fpath):
         col_sus = col_dropna.loc[~(valid_idx)]
         display(col_sus)
 
-def main():
-    config_initialization()
-
-if __name__ == '__main__':
-    main()
-
+config, taxid_dict, dir_vars = config_initialization()

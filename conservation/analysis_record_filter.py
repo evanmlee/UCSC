@@ -124,7 +124,7 @@ def length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath,force_over
     lm_df.to_csv(suppl_lm_df_fpath,sep='\t')
     return suppl_lm_df_fpath
 
-def length_metric_filter(taxid_dict,dir_vars,length_metrics_fpath,tolerance=0.05,how='all'):
+def length_metric_checks(taxid_dict,dir_vars,length_metrics_fpath,tolerance=0.05,how='all',overwrite=False):
     """Returns a DataFrame check_df with transcript_id index and columns corresponding to taxonomy IDs and values
     on whether that species record passed length checks.
 
@@ -132,15 +132,23 @@ def length_metric_filter(taxid_dict,dir_vars,length_metrics_fpath,tolerance=0.05
     :param dir_vars: maps 'bestNCBI_parent' to directory path for bestNCBI-record-against-UCSC alignment data
     :param length_metrics_fpath: file path to length_metrics_table
     :param tolerance: Maximum percent difference in length tolerated for a sequence record to pass length checks
-    :param (str) how: 'any' or 'all'
-    :return:
-    Length checks are against 1) homo sapiens record, 2)
+    :param (str) how: accepted values: 'any','all','most'. Any: any length checks pass->True. All: all checks->True.
+    Most: Over half pass->True
+    :return: lm_checks: DataFrame, for each transcript_id in length metrics table, containsboolean values for each
+    taxonomy ID which correspond to whether the bestNCBI record for that species passed length checks as specified with
+    how.
+    Length checks are against 1) boreoeutherian UCSC median 2) best NCBI records median 3) homo sapiens record,
+    4) mus musculus record and 5) For heterocephalus glaber: checks against UCSC data for het g. For Urocitellus parryii:
+    checks against speTri record length in UCSC data.
     """
     suppl_lm_df_fpath = length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath)
     check_col_labels = ["{0}_check".format(taxid) for taxid in taxid_dict]
     check_df = pd.DataFrame(columns=check_col_labels)
+    checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
+    if os.path.exists(checks_fpath) and not overwrite:
+
+        return
     suppl_lm_df = pd.read_csv(suppl_lm_df_fpath,sep='\t',index_col=0)
-    suppl_row_generator = suppl_lm_df.iterrows()
     tax_specific_checks = {9999:['43179_length'],10181:['10181_UCSC_length'],29073:[],9994:[]}
 
     for taxid in taxid_dict:
@@ -148,23 +156,26 @@ def length_metric_filter(taxid_dict,dir_vars,length_metrics_fpath,tolerance=0.05
         check_col = "{0}_check".format(taxid)
         check_labels = ['euth_median','bestncbi_median','9606_length','10090_length']
         check_labels.extend(tax_specific_checks[taxid])
-        idx, row = suppl_row_generator.__next__()
         spec_indiv_checks = pd.DataFrame(columns=check_labels)
-        # print(idx)
-        # for idx, row in suppl_row_generator:
-        if True:
+        for idx,row in suppl_lm_df.iterrows():
+        # if True:
             spec_length = row[length_label]
             if np.isnan(spec_length):
-                check_df.loc[idx,check_col] = np.nan#False#np.nan #False
+                #If no spec_length (ie no available record for species) use np.nan as fill values to differentiate
+                #from failed checks
+                check_df.loc[idx,check_col] = np.nan
                 spec_indiv_checks.loc[idx,:] = np.nan
-                continue
-            check_lengths = row[check_labels]
-            checks = (check_lengths-spec_length)/check_lengths <= tolerance
-            if how == 'any':
-                check_df.loc[idx,check_col] = checks.any()
+            else:
+                check_lengths = row[check_labels]
+                checks = (check_lengths-spec_length)/check_lengths <= tolerance
                 spec_indiv_checks.loc[idx, :] = checks
-            elif how=='all':
-                check_df.loc[idx, check_col] = checks.all()
-                spec_indiv_checks.loc[idx, :] = checks
+                if how == 'any':
+                    check_df.loc[idx,check_col] = checks.any()
+                elif how=='all':
+                    check_df.loc[idx, check_col] = checks.all()
+                elif how=='most':
+                    check_df.loc[idx, check_col] = sum(checks)/len(checks) >= 0.5
+        spec_indiv_checks_fpath = "{0}/{1}_length_checks.tsv".format(dir_vars['combined_run'], taxid)
+        spec_indiv_checks.to_csv(spec_indiv_checks_fpath,sep='\t')
 
-    display(check_df)
+    check_df.to_csv(checks_fpath,sep='\t')

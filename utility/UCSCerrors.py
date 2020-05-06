@@ -23,36 +23,36 @@ class NCBIQueryError(Error):
         self.code = code
         self.message = message
 
-def write_errors(errors_fpath,gene_symbol,error):
+def write_errors(errors_fpath,tid,error):
     """Maintains a tsv/ DataFrame of gene symbols and errors generated during a run.
     """
     etype,ecode,emsg = error.error_type,error.code,error.message
     if os.path.exists(errors_fpath):
         check_ef,errors_df = load_errors(errors_fpath)
-        if gene_symbol in errors_df['gene_symbol'].unique():
-            gene_error_df = errors_df.loc[errors_df['gene_symbol']==gene_symbol,:]
+        if tid in errors_df['tid'].unique():
+            gene_error_df = errors_df.loc[errors_df['tid']==tid,:]
             if gene_error_df['error_message'].str.contains(emsg).any() or \
                 (etype == 'SequenceDataError' and gene_error_df['error_type'].str.contains(etype).any()):
-                print_errors(errors_df,gene_symbol,message=emsg)
+                print_errors(errors_df,tid,message=emsg)
                 return
     else:
-        error_columns = ['gene_symbol','error_type','error_code','error_message']
+        error_columns = ['tid','error_type','error_code','error_message']
         errors_df = pd.DataFrame(columns=error_columns)
-    error_row = pd.Series({'gene_symbol':gene_symbol,'error_type':etype,'error_code':ecode,'error_message':emsg})
+    error_row = pd.Series({'tid':tid,'error_type':etype,'error_code':ecode,'error_message':emsg})
     errors_df = errors_df.append(error_row,ignore_index=True)
-    print_errors(errors_df,gene_symbol,emsg)
+    print_errors(errors_df,tid,emsg)
     errors_df.to_csv(errors_fpath,sep='\t')
 
-def print_errors(errors_df,gene_symbol,message=None,error_type=None):
+def print_errors(errors_df,tid,message=None,error_type=None):
     """
 
     :param errors_df: DataFrame of errors information
-    :param gene_symbol: symbol string used to filter errors_df
+    :param tid: transcript_id string used to filter errors_df
     :param message: Optional, if provided only prints errors with text matching message
     :param error_type: Optional, if provided, only prints errors of specified error_type
     :return: N/A. Writes error information to output
     """
-    symbol_df = errors_df.loc[errors_df['gene_symbol']==gene_symbol,:]
+    symbol_df = errors_df.loc[errors_df['tid']==tid,:]
     error_rows = symbol_df
     if message and error_rows['error_message'].str.contains(message).any():
         error_rows = error_rows.loc[error_rows['error_message']==message,:]
@@ -83,4 +83,12 @@ def load_errors(errors_fpath,error_type=""):
         return check_error_df, errors_df
     else:
         check_error_df = False
-        return check_error_df, pd.DataFrame(columns=['gene_symbol','error_type','error_code','error_message'])
+        return check_error_df, pd.DataFrame(columns=['tid','error_type','error_code','error_message'])
+
+def add_gene_symbol(errors_fpath,xref_fpath,outpath=""):
+    errors_df = load_errors(errors_fpath)
+    xref_df = pd.read_csv(xref_fpath, sep='\t', index_col=0)
+    errors_df.loc['gene_symbol'] = xref_df.loc[errors_df.index,'HGNC_symbol']
+    if outpath and not outpath == errors_fpath:
+        errors_df.to_csv(outpath,sep='\t')
+    return errors_df

@@ -155,8 +155,8 @@ class ConservationTest(unittest.TestCase):
 
         row_gen = suppl_lm_df.iterrows()
         for idx, row in row_gen:
+            ncbi_cols = row[ncbi_col_labels]
             try:
-                ncbi_cols = row[ncbi_col_labels]
                 precalc_bn_mean, precalc_bn_med = row['bestncbi_mean'], row['bestncbi_median']
                 recalc_bn_med = np.nanmedian(ncbi_cols)
                 recalc_bn_med = np.nanmedian(ncbi_cols)
@@ -169,12 +169,25 @@ class ConservationTest(unittest.TestCase):
 
     def test_lm_filter(self):
         best_NCBI_parent = "combined_alignments/hg38AA_knownCanonical/4species1/bestNCBI"
-        test_dir_vars = {'bestNCBI_parent': best_NCBI_parent}
+        combined_run = "combined_alignments/hg38AA_knownCanonical/4species1"
+        test_dir_vars = {'bestNCBI_parent': best_NCBI_parent,
+                         'combined_run':combined_run}
         lm_fpath = "combined_alignments/hg38AA_knownCanonical/4species1/length_metrics.tsv"
-        ar_filt.length_metric_filter(TEST_ANALYSIS_DICT,test_dir_vars,lm_fpath)
+        ar_filt.length_metric_checks(TEST_ANALYSIS_DICT,test_dir_vars,lm_fpath,how='most')
 
     def test_overall_summary(self):
-        test_combined_fpath = "tests/test_data/combined/ENST00000002596.6.fasta"
+        from utility.directoryUtility import taxid_dict,dir_vars
+        # test_combined_fpath = "tests/test_data/combined/ENST00000002596.6.fasta"
+        length_checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
+        lc_df = pd.read_csv(length_checks_fpath, sep='\t', index_col=0)
+        test_tid,test_col_label = "ENST00000002596.6","9999_check"
+        lc_col = lc_df[test_col_label]
+
+        xref_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
+
+
+
+
 
 
 if __name__ == "__main__":
