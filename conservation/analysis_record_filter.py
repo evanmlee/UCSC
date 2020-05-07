@@ -83,7 +83,7 @@ def length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath,force_over
     :return: suppl_lm_df_fpath: File path to supplemented length metrics table
     """
     from IPython.display import display
-    lm_df = pd.read_csv(length_metrics_fpath,sep='\t',index_col=0)
+
     if not suppl_lm_df_fpath:
         suppl_lm_df_fpath = length_metrics_fpath[:-4]+"_suppl.tsv"
     bestNCBI_dir = dir_vars['bestNCBI_parent']
@@ -96,7 +96,20 @@ def length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath,force_over
         print("File already exists at supplemented length metrics path: {0}".format(suppl_lm_df_fpath))
         print("Run with force_overwrite=True if recalculation desired.")
         return suppl_lm_df_fpath
+    elif os.path.exists(suppl_lm_df_fpath):
+        lm_df = pd.read_csv(length_metrics_fpath, sep='\t', index_col=0)
+        suppl_lm_df = pd.read_csv(suppl_lm_df_fpath, sep='\t', index_col=0)
+        # lm_df.loc[suppl_lm_df.index,UCSC_cols] = suppl_lm_df[UCSC_cols]
+        # lm_df.loc[suppl_lm_df.index , NCBI_cols] = suppl_lm_df[NCBI_cols]
+        for col in suppl_lm_df:
+            lm_df.loc[suppl_lm_df.index,col] = suppl_lm_df[col]
+        display(lm_df)
+    else:
+        lm_df = pd.read_csv(length_metrics_fpath, sep='\t', index_col=0)
     for tid,row in lm_df.iterrows():
+        if tid in lm_df.index \
+                and "9606_length" in lm_df.columns and not np.isnan(row["9606_length"]):
+            continue
         comb_fasta = "{0}/{1}.fasta".format(combined_dir,tid)
         comb_df = fastautil.load_UCSC_NCBI_df(comb_fasta,taxid_dict)
         for i,taxid in enumerate(UCSC_taxids):
@@ -143,22 +156,30 @@ def length_metric_checks(taxid_dict,dir_vars,length_metrics_fpath,tolerance=0.05
     """
     suppl_lm_df_fpath = length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath)
     check_col_labels = ["{0}_check".format(taxid) for taxid in taxid_dict]
-    check_df = pd.DataFrame(columns=check_col_labels)
+
     checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
     if os.path.exists(checks_fpath) and not overwrite:
-
         return
+    elif os.path.exists(checks_fpath):
+        check_df = pd.read_csv(checks_fpath,sep='\t',index_col=0)
+    else:
+        check_df = pd.DataFrame(columns=check_col_labels)
+    check_df.index.name = "UCSC_transcript_id"
     suppl_lm_df = pd.read_csv(suppl_lm_df_fpath,sep='\t',index_col=0)
     tax_specific_checks = {9999:['43179_length'],10181:['10181_UCSC_length'],29073:[],9994:[]}
-
     for taxid in taxid_dict:
         length_label = "{0}_length".format(taxid)
         check_col = "{0}_check".format(taxid)
         check_labels = ['euth_median','bestncbi_median','9606_length','10090_length']
         check_labels.extend(tax_specific_checks[taxid])
-        spec_indiv_checks = pd.DataFrame(columns=check_labels)
+        spec_indiv_checks_fpath = "{0}/{1}_length_checks.tsv".format(dir_vars['combined_run'], taxid)
+        if os.path.exists(spec_indiv_checks_fpath):
+            spec_indiv_checks = pd.read_csv(spec_indiv_checks_fpath,sep='\t',index_col=0)
+        else:
+            spec_indiv_checks = pd.DataFrame(columns=check_labels)
         for idx,row in suppl_lm_df.iterrows():
-        # if True:
+            if idx in check_df.index:
+                continue
             spec_length = row[length_label]
             if np.isnan(spec_length):
                 #If no spec_length (ie no available record for species) use np.nan as fill values to differentiate
@@ -175,7 +196,16 @@ def length_metric_checks(taxid_dict,dir_vars,length_metrics_fpath,tolerance=0.05
                     check_df.loc[idx, check_col] = checks.all()
                 elif how=='most':
                     check_df.loc[idx, check_col] = sum(checks)/len(checks) >= 0.5
-        spec_indiv_checks_fpath = "{0}/{1}_length_checks.tsv".format(dir_vars['combined_run'], taxid)
+
         spec_indiv_checks.to_csv(spec_indiv_checks_fpath,sep='\t')
 
     check_df.to_csv(checks_fpath,sep='\t')
+
+if __name__ == "__main__":
+    pd.options.display.max_columns = None
+    update_checks = True
+    if update_checks:
+        from utility.directoryUtility import config,taxid_dict,dir_vars
+        length_metrics_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
+        length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath,force_overwrite=True)
+        length_metric_checks(taxid_dict,dir_vars,length_metrics_fpath,overwrite=True)

@@ -3,10 +3,6 @@ import pandas as pd
 import numpy as np
 import re
 
-import subprocess
-import requests
-import xml.etree.ElementTree as ET
-
 from query import sql_orthologs as so,api_orthologs as ao
 from query import orthologUtility as orutil
 from utility.UCSCerrors import load_errors, NCBIQueryError
@@ -30,8 +26,6 @@ def compile_ortholog_data(local_orthologs_fpath, API_orthologs_fpath,tax_id_colu
     local_entry_counts = local_orthologs.count()
     local_missing_cols = [col for col,count in local_entry_counts.iteritems() if count==0]
     API_orthologs = pd.read_csv(API_orthologs_fpath, sep='\t', dtype='str', index_col=0)
-    # local_missing_spec = ['29073']
-    # local_missing_cols = [tax_id_columns[col] for col in local_missing_spec]
     union_index = local_orthologs.index.union(API_orthologs.index)
     final_orthologs = pd.DataFrame(index=union_index,columns=API_orthologs.columns)
     final_orthologs.loc[local_orthologs.index,:] = local_orthologs
@@ -40,8 +34,6 @@ def compile_ortholog_data(local_orthologs_fpath, API_orthologs_fpath,tax_id_colu
     final_orthologs.loc[API_local_comp,:] = API_orthologs.loc[API_local_comp,:]
     final_orthologs.loc[local_API_int,local_missing_cols] = API_orthologs.loc[local_API_int,local_missing_cols]
     return final_orthologs
-
-
 
 def _compare_formatted_orthologs(suspect_fpath,correct_fpath):
     """Internal function. Compares entries from two versions of the formatted_ortholgos table returned by
@@ -118,88 +110,10 @@ def missing_local_orthologs(orthologs_table,taxid_cols,local_orthologs):
     :return: DataFrame containing subset of orthologs table with missing values in columns speciefied by taxid_cols
     and whose index is in local_orthologs.
     """
-
     sub_table = orthologs_table.loc[local_orthologs.index,taxid_cols.values()]
     bool_df = sub_table.isna()
     return orutil.boolean_df_agg(sub_table,bool_df,how='any',comp=False)
 
-
-
-
-
-
-def fetch_NCBI_protein_records(NCBI_gid_df, taxid_dict, dir_vars,
-                               overwrite_fasta=[], NCBI_api_key='',tax_subset=None):
-    """Downloads NCBI protein records for each NCBI Gene ID listed in AGS_gene_id_df.
-
-    AGS_gene_id_df: DataFrame object with required columns 'Gene Symbol' and 'AGS Gene ID.' Gene symbol
-    entries are used to name fasta files downloaded; AGS Gene IDs are queried using Entrez elink
-    to 1) match Gene ID to all corresponding Protein IDs and 2) download those Protein IDs into one fasta
-    file, saved into NCBI_homology_dirpath
-    """
-
-    orthologs_dir, orthologs_seq = dir_vars["orthologs_parent"],dir_vars["orthologs_seq"]
-    try:
-        ENTREZ_BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
-        if NCBI_api_key:
-            api_key_ext = "&api_key={0}".format(NCBI_api_key)
-        else:
-            api_key_ext = ''
-
-        NCBI_protein_ID_tsv_fpath = "{0}/NCBI_protein_IDs.tsv".format(orthologs_dir)
-        NCBI_protein_ID_columns = []
-        for taxid in taxid_dict:
-            gid_col = "{0}_gid".format(taxid)
-            pid_col = "{0}_pids".format(taxid)
-            NCBI_protein_ID_columns.extend([gid_col, pid_col])
-
-        if tax_subset:
-            taxid_dict = {k:taxid_dict[k] for k in taxid_dict if k in tax_subset}
-
-        if os.path.exists(NCBI_protein_ID_tsv_fpath):
-            NCBI_protein_ID_table = pd.read_csv(NCBI_protein_ID_tsv_fpath, dtype='str', delimiter='\t', index_col=0)
-            NCBI_protein_ID_table.index.name = "NCBI_hgid"
-        else:
-            NCBI_protein_ID_table = pd.DataFrame(index=NCBI_gid_df.index, columns=NCBI_protein_ID_columns, dtype=str)
-            NCBI_protein_ID_table.index.name = "NCBI_hgid"
-
-            #     OVERWRITE_FASTAS = ["ATPIF1"]
-        # Convert Gene ID to list of Protein IDs corresponding to transcript variant sequences
-        for NCBI_gid, row in NCBI_gid_df.iterrows():
-            # pid_row = NCBI_protein_ID_table.loc[NCBI_gid, :]
-            for taxid in taxid_dict:
-                gid_col = "{0}_gid".format(taxid)
-                pid_col = "{0}_pids".format(taxid)
-                spec_gid = row[gid_col]
-                spec_dirpath = "{0}/{1}".format(orthologs_seq, taxid)
-                spec_fasta_fpath = "{0}/{1}.fasta".format(spec_dirpath, NCBI_gid)
-                #Check for initiating NCBI elink/efetch calls: If 1) spec_gid is not null and 2)
-                #Fastas fetch not done previously or is being forced by overwrite_fasta
-                if NCBI_gid in overwrite_fasta and os.path.exists(spec_fasta_fpath):
-                    os.remove(spec_fasta_fpath)
-                if (not os.path.exists(spec_fasta_fpath) or NCBI_gid in overwrite_fasta) \
-                        and type(spec_gid) == str:
-                    elink_req = "elink.fcgi?dbfrom=gene&db=protein&id={0}{1}".format(spec_gid, api_key_ext)
-                    gp_elink_url = ENTREZ_BASE_URL + elink_req
-                    elink_response = requests.get(gp_elink_url)
-                    xml_data = elink_response.content
-                    root = ET.fromstring(xml_data)
-                    # Check XML formatting of elink pages - update xpath accordingly if functionality breaks
-                    # Pulls Record IDs for Protein specifically; use gene_protein_refseq for Protein RefSeqs
-                    protein_IDs = [link.text for link in root.findall(".//LinkSetDb[LinkName='gene_protein']/Link/Id")]
-                    id_str = ','.join(protein_IDs)
-                    NCBI_protein_ID_table.loc[NCBI_gid,gid_col] = spec_gid
-                    NCBI_protein_ID_table.loc[NCBI_gid, pid_col] = id_str
-                    efetch_req = "efetch.fcgi?db=protein&id={0}&rettype=fasta&retmode=text{1}".format(id_str,api_key_ext)
-                    efetch_url = ENTREZ_BASE_URL + efetch_req
-                    subprocess.run(args=['wget', efetch_url, '-O', spec_fasta_fpath])
-                    NCBI_protein_ID_table.to_csv(NCBI_protein_ID_tsv_fpath, sep='\t')
-        return NCBI_protein_ID_table
-    except Exception as e:
-        print(e)
-        print("Updating to file and stopping prematurely")
-        NCBI_protein_ID_table.to_csv(NCBI_protein_ID_tsv_fpath, sep='\t')
-        return NCBI_protein_ID_table
 
 def write_ortholog_errors(taxid_dict,dir_vars,outpath="",overwrite=False):
     from IPython.display import display
@@ -279,8 +193,6 @@ def write_ortholog_errors(taxid_dict,dir_vars,outpath="",overwrite=False):
                 allncbi_fpath_count+=1
         print("Number of UCSC Transcript IDs with 'dropped from analysis' errors: {0}".format(len(ambig_errors)))
         print("Existing allNCBI file path count for ambigous error tids: {0}".format(allncbi_fpath_count))
-
-
 
 def allseq_NCBI_UCSC_slignment(NCBI_xref_df, taxid_dict, dir_vars,gid_subset=[]):
     """File preparation for allNCBI data. Prepares: 1) compiled NCBI raw and aligned data and 2) all NCBI data profiled
@@ -392,7 +304,7 @@ def main():
     update_pids = False
     if update_pids:
         api_key = config["DIRECTORY"]["NCBIAPIKey"]
-        pid_df = fetch_NCBI_protein_records(final_orthologs,taxid_dict,dir_vars,
+        pid_df = ao.fetch_NCBI_protein_records(final_orthologs,taxid_dict,dir_vars,
                                         overwrite_fasta=diff_df.index,NCBI_api_key=api_key)
     update_errors = True
     if update_errors:
@@ -404,7 +316,6 @@ def main():
     if process_allNCBI:
         NCBI_xrefs = orutil.load_NCBI_xref_table(NCBI_xref_inpath, gid_dtype='int')
         allseq_NCBI_UCSC_slignment(NCBI_xrefs,taxid_dict,dir_vars,gid_subset=diff_df.index.values)
-
 
 if __name__ == "__main__":
     main()

@@ -28,7 +28,6 @@ def select_NCBI_records(dir_vars,taxid_dict,UCSC_tid,NCBI_gid,selection="identit
 
     allseq_df = UCSC_df.append(allNCBI_df,sort=False)
     allseq_df.loc[allNCBI_df.index,"NCBI_taxid"] = allNCBI_df["NCBI_taxid"]
-    # display(allseq_df["sequence"])
     id_dm, align_srs = construct_id_dm(allseq_df,combined_all_aln_fpath,aligned=True)
     bestNCBI_ids = []
     bestNCBI_dict = {}
@@ -140,3 +139,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+
+
