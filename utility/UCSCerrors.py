@@ -18,7 +18,13 @@ class SequenceDataError(Error):
         self.message = message
 
 class NCBIQueryError(Error):
+    error_type = "NCBIQueryError"
+    def __init__(self, code, message):
+        self.code = code
+        self.message = message
 
+class NCBIOrthologError(Error):
+    error_type = "NCBIOrthologError"
     def __init__(self, code, message):
         self.code = code
         self.message = message
@@ -74,6 +80,8 @@ def load_errors(errors_fpath,error_type=""):
     """
     if os.path.exists(errors_fpath):
         errors_df = pd.read_csv(errors_fpath, delimiter='\t',index_col=0)
+        if errors_df.index.name == 'tid':
+            errors_df = errors_df.reset_index()
         if error_type:
             errors_df = errors_df.loc[errors_df['error_type'] == error_type, :]
         if len(errors_df) == 0:
@@ -92,3 +100,9 @@ def add_gene_symbol(errors_fpath,xref_fpath,outpath=""):
     if outpath and not outpath == errors_fpath:
         errors_df.to_csv(outpath,sep='\t')
     return errors_df
+
+from utility.directoryUtility import dir_vars
+from IPython.display import display
+errors_fpath = "{0}/errors.tsv".format(dir_vars['summary_run'])
+errors_df = load_errors(errors_fpath)
+# display(errors_df)

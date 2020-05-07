@@ -133,10 +133,10 @@ def overall_summary_table(dir_vars, xref_table, taxid_dict,
             combined_fasta_fpath = "{0}/combined/{1}.fasta".format(bestNCBI_dir, tid)
 
             if not os.path.exists(out_summary_fpath) or force_recalc:
-                if check_qes and tid in query_error_df['tid'].unique():
+                if check_qes and tid in query_error_df.index:
                     print("Transcript ID {0} failed to fetch NCBI orthologs".format(tid))
                     continue
-                if check_aes and tid in analysis_error_df['tid'].unique():
+                if check_aes and tid in analysis_error_df.index:
                     print_errors(analysis_error_df,tid,error_type="SequenceAnalysisError")
                     continue
                 #Check for tid_subset and length_checls
