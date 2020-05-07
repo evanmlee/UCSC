@@ -242,9 +242,6 @@ def allseq_NCBI_UCSC_slignment(NCBI_xref_df, taxid_dict, dir_vars,gid_subset=[])
                     print("UCSC_tid_fasta_path: {0}".format(UCSC_raw_tid_fasta))
                     print("NCBI_alignment_fpath: {0}".format(NCBI_alignment_fpath))
 
-        else:
-            pass
-
 def main():
     from IPython.display import display
     from utility.directoryUtility import config,taxid_dict,dir_vars

@@ -2,8 +2,8 @@ import pandas as pd
 import numpy as np
 import os
 
-def load_orthologs_table(orthologs_fpath):
-    ortholog_table = pd.read_csv(orthologs_fpath,sep='\t',index_col=0,dtype=str)
+def load_orthologs_table(orthologs_fpath,gid_dtype='str'):
+    ortholog_table = pd.read_csv(orthologs_fpath,sep='\t',index_col=0,dtype=gid_dtype)
     # ortholog_table.index = ortholog_table.index.astype('str')
     return ortholog_table
 
@@ -49,7 +49,7 @@ def ortholog_patmatch(ortholog_table,match_pat,how="any",comp=False):
         ortholog_col = ortholog_table[col]
         bool_col = ortholog_col.str.contains(match_pat)
         bool_df.loc[:,col] = bool_col
-    match_df = _boolean_df_agg(ortholog_table,bool_df,how=how,comp=comp)
+    match_df = boolean_df_agg(ortholog_table,bool_df,how=how,comp=comp)
     return match_df
 
 def ortholog_na_filter(ortholog_table,how="any",comp=False):
@@ -70,6 +70,6 @@ def ortholog_na_filter(ortholog_table,how="any",comp=False):
         ortholog_col = ortholog_table[col]
         bool_col = ortholog_col.isna()
         bool_df.loc[:, col] = bool_col
-    match_df = _boolean_df_agg(ortholog_table, bool_df, how=how, comp=comp)
+    match_df = boolean_df_agg(ortholog_table, bool_df, how=how, comp=comp)
     return match_df
 

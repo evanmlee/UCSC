@@ -26,13 +26,13 @@ class FastaDataFrameTest(unittest.TestCase):
         for tid in noneuth_tax_df:
             self.assertFalse(tid in df['NCBI_taxid'].unique())
         #Test NCBI subset
-        test_ncbi_subset = df.loc[df['NCBI_taxid']=='9999',:].index
+        test_ncbi_subset = df.loc[df['NCBI_taxid']==9999,:].index
         df = fastaUtility.load_UCSC_NCBI_df(test_fpath,NCBI_subset=test_ncbi_subset)
         self.assertTrue(len(df)==101)
         self.assertFalse('XP_015337450.1' in df.index)
 
         #Test taxid_dict doesn't correspond to table file in config, should cause filtering even if ncbi_subset not provided
-        test_tid_dict = {'9999':'Urocitellus parryii'}
+        test_tid_dict = {9999:'Urocitellus parryii'}
         df = fastaUtility.load_UCSC_NCBI_df(test_fpath,ncbi_taxid_dict=test_tid_dict)
 
     def test_UCSC_df(self):

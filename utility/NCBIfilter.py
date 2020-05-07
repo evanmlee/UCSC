@@ -6,7 +6,7 @@ importlib.reload(directoryUtility)
 from IPython.display import display
 from utility.fastaUtility import UCSC_fasta_df, NCBI_fasta_df, filter_fasta_infile, min_dist_spec_record, construct_id_dm
 import os
-from query import NCBI_homology
+from query import orthologUtility as orutil
 
 def load_transcript_table(transcripts_fpath):
     transcript_table = pd.read_csv(transcripts_fpath,sep='\t',index_col="UCSC_transcript_id")
@@ -23,8 +23,8 @@ def select_NCBI_records(dir_vars,taxid_dict,UCSC_tid,NCBI_gid,selection="identit
     UCSC_df = UCSC_fasta_df(raw_UCSC_fpath)
     allNCBI_df = NCBI_fasta_df(NCBI_all_aln_fpath,taxid_dict=taxid_dict)
 
-    CLOSEST_EVO = {'9999':['mm10','rn6','speTri2'],'29073':['ailMel1','canFam3'],
-                   '10181':['hetGla2','mm10','rn6'], '9994':['mm10','rn6','speTri2']}
+    CLOSEST_EVO = {9999:['mm10','rn6','speTri2'],29073:['ailMel1','canFam3'],
+                   10181:['hetGla2','mm10','rn6'], 9994:['mm10','rn6','speTri2']}
 
     allseq_df = UCSC_df.append(allNCBI_df,sort=False)
     allseq_df.loc[allNCBI_df.index,"NCBI_taxid"] = allNCBI_df["NCBI_taxid"]
@@ -42,8 +42,17 @@ def select_NCBI_records(dir_vars,taxid_dict,UCSC_tid,NCBI_gid,selection="identit
             #Check if records in id_calc_records are all empty strings
             if sum([len(seq) for seq in UCSC_df.loc[id_calc_records,"sequence"]]) == 0:
                 #TODO: Figure out filtering if no UCSC records for comparison (likely only for polar bear NCBI)
-                continue
-            md_row, min_dist = min_dist_spec_record(id_dm,align_srs.index,spec_record_ids,
+                if len(NCBI_tid_df) == 1:
+                    print("UCSC tid: {0}, NCBI hgid: {1}, taxid: {2}".format(UCSC_tid, NCBI_gid, taxid))
+                    print("No evolutionary relative data but only one NCBI record present. Adding to set.")
+                    md_row = allseq_df.loc[NCBI_tid_df.index,:]
+                else:
+                    print("UCSC tid: {0}, NCBI hgid: {1}, taxid: {2}".format(UCSC_tid,NCBI_gid,taxid))
+                    print("No evolutionary relative data for min dist calculation")
+                    print("Multiple NCBI records present for taxid, cannot select min dist record. Skipping. ")
+                    continue
+            else:
+                md_row, min_dist = min_dist_spec_record(id_dm,align_srs.index,spec_record_ids,
                                                                  id_calc_records,allseq_df)
             bestNCBI_ids.append(md_row.name)
             bestNCBI_dict[taxid] = md_row
@@ -84,9 +93,9 @@ def filter_allNCBI_data(force_overwrite_tid_subset=[],alt_lm_fpath=""):
     transcripts_fpath = "{0}/ensembl_stable_ids_{1}.tsv".format(reorg_parent_dir, dataset_name)
     xref_fpath = "{0}/NCBI_xrefs.tsv".format(xref_summary)
     transcript_table = load_transcript_table(transcripts_fpath)
-    xref_table = NCBI_homology.load_NCBI_xref_table(xref_fpath,gid_dtype=int)
+    xref_table = orutil.load_NCBI_xref_table(xref_fpath,gid_dtype=int)
     orthologs_fpath = "{0}/orthologs_final.tsv".format(orthologs_dir)
-    ortholog_id_table = NCBI_homology.load_orthologs_table(orthologs_fpath)
+    ortholog_id_table = orutil.load_orthologs_table(orthologs_fpath)
     NCBI_gid_table = xref_table.loc[:, ["stable_gene_id", "NCBI_gid", "HGNC_symbol"]]
     if alt_lm_fpath:
         length_metrics_fpath = alt_lm_fpath
@@ -111,7 +120,8 @@ def filter_allNCBI_data(force_overwrite_tid_subset=[],alt_lm_fpath=""):
         best_NCBI_fpath = "{0}/NCBI_alignments/{1}.fasta".format(bestNCBI, NCBI_gid)
         combined_best_tid_fpath = "{0}/combined/{1}.fasta".format(bestNCBI,UCSC_tid)
         # if (not os.path.exists(best_NCBI_fpath)) or UCSC_tid in force_overwrite_tid_subset:
-        if (not os.path.exists(combined_best_tid_fpath)) or UCSC_tid in force_overwrite_tid_subset:
+        if (not os.path.exists(combined_best_tid_fpath)) or UCSC_tid in force_overwrite_tid_subset\
+                or lm_df.loc[UCSC_tid,:].isnull().any():
             lm_df.loc[UCSC_tid, "NCBI_gid"] = NCBI_gid
             try:
                 length_metrics = select_NCBI_records(dir_vars, taxid_dict, UCSC_tid, NCBI_gid)

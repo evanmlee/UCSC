@@ -19,7 +19,7 @@ class ConservationTest(unittest.TestCase):
         test_records_fpath = "tests/tmp/ENST00000002596.6_9999records.tsv"
         test_filtered_path = "tests/tmp/ENST00000002596_6_9999filtered.fasta"
         full_test_df = fautil.load_UCSC_NCBI_df(test_combined_fpath)
-        # print(full_test_df.index)
+
         boreo_df, rest_df = fautil.partition_UCSC_by_clade(full_test_df,'boreoeutheria')
         ncbi_idx = full_test_df.loc[full_test_df["NCBI_taxid"]==9999].index
         for path in [test_records_fpath,test_filtered_path]:
@@ -104,6 +104,22 @@ class ConservationTest(unittest.TestCase):
         self.assertFalse(43179 in redundant_filtered['NCBI_taxid'].unique())
         for idx_val in ncbi_idx:
             self.assertTrue(idx_val in redundant_filtered.index)
+
+    def test_drop_incomplete_records(self):
+        with pd.option_context('display.max_columns',None):
+            test_combined_fpath = "tests/test_data/combined/ENST00000422628.5.fasta"
+            test_records_outpath = "tests/tmp/ENST00000422628.5_9999records.tsv"
+            filtered_tmp_fpath = "tests/tmp/ENST00000422628.5_9999filtered.fasta"
+            combined_df = fautil.load_UCSC_NCBI_df(test_combined_fpath)
+            ncbi_idx = combined_df.loc[(combined_df["NCBI_taxid"] == 9999) & ~(combined_df.index.str.contains("ENST"))].index
+            boreo_df, rest_df = fautil.partition_UCSC_by_clade(combined_df, 'boreoeutheria')
+
+            filtered_records_df, outpath = ar_filt.filter_analysis_subset(test_combined_fpath,test_records_outpath,
+                                                      UCSC_analysis_subset=boreo_df.index,NCBI_record_subset=ncbi_idx,
+                                                      filtered_outpath=filtered_tmp_fpath,taxid_dict=TEST_ANALYSIS_DICT)
+            display(filtered_records_df)
+
+
 
     def test_gene_summary(self):
 

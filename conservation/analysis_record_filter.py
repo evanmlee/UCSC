@@ -4,32 +4,32 @@ import os
 from IPython.display import display
 from utility import fastaUtility as fastautil
 
-def drop_NCBI_species_from_UCSC_records(combined_records_df,ncbi_index,analysis_taxid_dict):
-    """
+def drop_NCBI_species_from_UCSC_records(combined_records_df,ncbi_idx,analysis_taxid_dict):
+    """Drops UCSC record data for any species tax_ids represented in analysis_taxid_dict.
 
     :param combined_records_df: Records DataFrame containing UCSC record data and NCBI record(s)
-    :param ncbi_index: Corresponds to NCBI species being used for analysis
+    :param ncbi_idx: Corresponds to NCBI species being used for analysis
     :param analysis_taxid_dict: Dictionary with NCBI taxids of analysis species as keys. UCSC records with any taxids
     in this set will be excluded from the UCSC used as the outgroup in analysis
     :return: filtered: combined_records_df with UCSC records corresponding to analysis_taxids removed
     """
-    ncbi_partition = (combined_records_df.index.isin(ncbi_index)) & ~(combined_records_df.index.str.contains("ENST"))
+    ncbi_partition = (combined_records_df.index.isin(ncbi_idx)) & ~(combined_records_df.index.str.contains("ENST"))
     filtered_ucsc, ncbi_df = combined_records_df.loc[~ncbi_partition,:],combined_records_df.loc[ncbi_partition,:]
     for drop_taxid in analysis_taxid_dict:
         filtered_ucsc = filtered_ucsc.loc[filtered_ucsc['NCBI_taxid']!=drop_taxid,:]
     filtered = filtered_ucsc.append(ncbi_df)
     return filtered
 
-def drop_redundant_UCSC_records(combined_records_df,ncbi_index):
+def drop_redundant_UCSC_records(combined_records_df,ncbi_idx):
     """For a given NCBI taxid, exclude UCSC from uniqueness/ conservation analysis from species which are either
     identical or close evolutionary relatives that likely contain similar adaptive residues to ncbi_taxid species
     (i.e. 13LGS and AGS). If provided NCBI taxids ar not in DROPPED_TAXIDS, returns unfilte
     :param combined_records_df: Records DataFrame containing UCSC record data and NCBI record(s)
-    :param ncbi_index: Index or index value that corresponds to NCBI species for analysis.
+    :param ncbi_idx: Index or index value that corresponds to NCBI species for analysis.
     """
     DROPPED_TAXIDS = {9999:[43179],10181:[10181]}
-    ncbi_taxids = combined_records_df.loc[ncbi_index,'NCBI_taxid']
-    ncbi_partition = (combined_records_df.index.isin(ncbi_index)) & ~(combined_records_df.index.str.contains("ENST"))
+    ncbi_taxids = combined_records_df.loc[ncbi_idx,'NCBI_taxid']
+    ncbi_partition = (combined_records_df.index.isin(ncbi_idx)) & ~(combined_records_df.index.str.contains("ENST"))
     filtered_ucsc, ncbi_df = combined_records_df.loc[~ncbi_partition, :], combined_records_df.loc[ncbi_partition, :]
     for ncbi_taxid in ncbi_taxids:
         if ncbi_taxid in DROPPED_TAXIDS:
@@ -38,9 +38,32 @@ def drop_redundant_UCSC_records(combined_records_df,ncbi_index):
     filtered = filtered_ucsc.append(ncbi_df)
     return filtered
 
+def drop_incomplete_records(combined_records_df, ncbi_idx,length_thresh=0.8, how='ncbi'):
+    """Applies a length filter to combined_records_df and drops UCSC records which have length less than accepted record
+    lengths multiplied by length_thresh.
+
+    :param combined_records_df: DataFrame containing record data from UCSC/NCBI. 
+    :param ncbi_idx: Index of NCBI records in combined_records_df 
+    :param (float) length_thresh: Should be between 0 and 1.
+    :param how: 'ncbi': Uses records in NCBI idx as accepted records to set length threshold
+    :return:
+    """
+    accepted_how_values = ['ncbi']
+    ncbi_partition = (combined_records_df.index.isin(ncbi_idx)) & ~(combined_records_df.index.str.contains("ENST"))
+    ucsc_df, ncbi_df = combined_records_df.loc[~ncbi_partition, :], combined_records_df.loc[ncbi_partition, :]
+    if how == 'ncbi':
+        accepted_records = ncbi_df.index
+    else:
+        raise ValueError("how must use values in accepted values: {0}".format((accepted_how_values)))
+    accepted_mean_len = np.mean(combined_records_df.loc[accepted_records,'length'])
+    cutoff_length = accepted_mean_len*length_thresh
+    filtered_ucsc_df = ucsc_df.loc[ucsc_df['length']>=cutoff_length,:]
+    filtered = filtered_ucsc_df.append(ncbi_df)
+    return filtered
+    
 def filter_analysis_subset(combined_fasta,records_tsv_fpath,UCSC_analysis_subset=[],NCBI_record_subset=[],
                            filtered_outpath="tmp/filtered_analysis_set.fasta",taxid_dict={},
-                           drop_redundant=True,drop_ncbi_from_ucsc=True):
+                           drop_redundant=True,drop_ncbi_from_ucsc=True,drop_incomplete=True):
     """Given subsets of UCSC and NCBI records to include in conservation_analysis, writes filtered sequence data to
     filtered_outpath and returns a DataFrame with filtered record information and the path to the sequence file.
 
@@ -54,6 +77,11 @@ def filter_analysis_subset(combined_fasta,records_tsv_fpath,UCSC_analysis_subset
     record information.
     :param drop_redundant: Default True. Removes UCSC records from final analysis set which correspond to identical/
     extremely close evo relatives for sake of determining unique residues/ analysis for NCBI species.
+    :param drop_ncbi_from_ucsc: Default True. Drops UCSC data corresponding to any species in the NCBI analysis set
+    (i.e. if heterocephalus glaber is in NCBI species set, corresponding UCSC hetGla records will be dropped from
+    outgroup for all NCBI analysis species).
+    :param drop_incomplete: Default True. Applies length filter to UCSC records and drops any record below length
+    threshold (determined by 80% of NCBI record length by default)
     :return: records_df: DataFrame containing record information represented in filtered sequence set
     :return: filtered_outpath: Outpath to which filtered records were written
     """
@@ -61,9 +89,11 @@ def filter_analysis_subset(combined_fasta,records_tsv_fpath,UCSC_analysis_subset
     records_df = fastautil.load_UCSC_NCBI_df(combined_fasta,ncbi_taxid_dict=taxid_dict,
                                          UCSC_subset=UCSC_analysis_subset,NCBI_subset=NCBI_record_subset)
     if drop_redundant:
-        records_df = drop_redundant_UCSC_records(records_df,ncbi_index=NCBI_record_subset)
+        records_df = drop_redundant_UCSC_records(records_df,ncbi_idx=NCBI_record_subset)
     if drop_ncbi_from_ucsc:
         records_df = drop_NCBI_species_from_UCSC_records(records_df,NCBI_record_subset,taxid_dict)
+    if drop_incomplete:
+        records_df = drop_incomplete_records(records_df,ncbi_idx=NCBI_record_subset)
     records_df.drop(columns=['sequence'],inplace=True)
     records_df.to_csv(records_tsv_fpath,sep='\t')
     fastautil.filter_fasta_infile(records_df.index,combined_fasta,outfile_path=filtered_outpath)
@@ -99,16 +129,15 @@ def length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath,force_over
     elif os.path.exists(suppl_lm_df_fpath):
         lm_df = pd.read_csv(length_metrics_fpath, sep='\t', index_col=0)
         suppl_lm_df = pd.read_csv(suppl_lm_df_fpath, sep='\t', index_col=0)
-        # lm_df.loc[suppl_lm_df.index,UCSC_cols] = suppl_lm_df[UCSC_cols]
-        # lm_df.loc[suppl_lm_df.index , NCBI_cols] = suppl_lm_df[NCBI_cols]
-        for col in suppl_lm_df:
+        suppl_cols = [col for col in suppl_lm_df.columns if col not in lm_df.columns]
+        for col in suppl_cols:
             lm_df.loc[suppl_lm_df.index,col] = suppl_lm_df[col]
-        display(lm_df)
+        # display(lm_df)
     else:
         lm_df = pd.read_csv(length_metrics_fpath, sep='\t', index_col=0)
     for tid,row in lm_df.iterrows():
-        if tid in lm_df.index \
-                and "9606_length" in lm_df.columns and not np.isnan(row["9606_length"]):
+        if tid in lm_df.index and (UCSC_cols[0] in lm_df.columns and not np.isnan(row[UCSC_cols[0]])) \
+                and (NCBI_cols[0] in lm_df.columns and not np.isnan(row[NCBI_cols[0]])):
             continue
         comb_fasta = "{0}/{1}.fasta".format(combined_dir,tid)
         comb_df = fastautil.load_UCSC_NCBI_df(comb_fasta,taxid_dict)
@@ -178,8 +207,9 @@ def length_metric_checks(taxid_dict,dir_vars,length_metrics_fpath,tolerance=0.05
         else:
             spec_indiv_checks = pd.DataFrame(columns=check_labels)
         for idx,row in suppl_lm_df.iterrows():
-            if idx in check_df.index:
-                continue
+            # if idx in check_df.index and not check_df.loc[idx,:].count()==0 and \
+            #     idx in spec_indiv_checks.index and not spec_indiv_checks.loc[idx,:].count()==0:
+            #     continue
             spec_length = row[length_label]
             if np.isnan(spec_length):
                 #If no spec_length (ie no available record for species) use np.nan as fill values to differentiate
@@ -188,7 +218,7 @@ def length_metric_checks(taxid_dict,dir_vars,length_metrics_fpath,tolerance=0.05
                 spec_indiv_checks.loc[idx,:] = np.nan
             else:
                 check_lengths = row[check_labels]
-                checks = (check_lengths-spec_length)/check_lengths <= tolerance
+                checks = np.abs((check_lengths-spec_length)/check_lengths) <= tolerance
                 spec_indiv_checks.loc[idx, :] = checks
                 if how == 'any':
                     check_df.loc[idx,check_col] = checks.any()
@@ -196,7 +226,6 @@ def length_metric_checks(taxid_dict,dir_vars,length_metrics_fpath,tolerance=0.05
                     check_df.loc[idx, check_col] = checks.all()
                 elif how=='most':
                     check_df.loc[idx, check_col] = sum(checks)/len(checks) >= 0.5
-
         spec_indiv_checks.to_csv(spec_indiv_checks_fpath,sep='\t')
 
     check_df.to_csv(checks_fpath,sep='\t')
@@ -207,5 +236,33 @@ if __name__ == "__main__":
     if update_checks:
         from utility.directoryUtility import config,taxid_dict,dir_vars
         length_metrics_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
-        length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath,force_overwrite=True)
-        length_metric_checks(taxid_dict,dir_vars,length_metrics_fpath,overwrite=True)
+        # length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath,force_overwrite=True)
+        length_metric_checks(taxid_dict,dir_vars,length_metrics_fpath,how='most',overwrite=True)
+    checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
+    check_df = pd.read_csv(checks_fpath, sep='\t', index_col=0)
+    suppl_fpath = "{0}/length_metrics_suppl.tsv".format(dir_vars['combined_run'])
+    suppl_df = pd.read_csv(suppl_fpath, sep='\t', index_col=0)
+
+    test_idx = "ENST00000422628.5"
+    test_suppl_row = suppl_df.loc[test_idx]
+    print("check results")
+    display(check_df.loc[test_idx])
+    print("Supplemented lengths:")
+    display(test_suppl_row)
+
+    test_row = suppl_df.loc[test_idx]
+    mm_check_labels = ['euth_median', 'bestncbi_median', '9606_length', '10090_length']
+    hg_check_labels = ['euth_median', 'bestncbi_median', '9606_length', '10090_length', '10181_UCSC_length']
+    mm_len, hg_len = test_row[['9994_length','10181_length']]
+
+    check_lengths = test_row[mm_check_labels]
+    display(check_lengths)
+    diffs = np.abs((check_lengths - mm_len) / check_lengths)
+    display(diffs)
+    display(diffs <= 0.05)
+    checks = (check_lengths - mm_len) / check_lengths <= 0.05
+    display(checks)
+
+    check_lengths = test_row[hg_check_labels]
+    checks = (check_lengths - hg_len) / check_lengths <= 0.05
+    # display(checks)

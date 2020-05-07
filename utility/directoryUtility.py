@@ -46,7 +46,7 @@ def create_run_directories(dir_vars,taxid_dict):
     create_directory("tmp")
     create_directory("tests/tmp")
     #creates defined directory structure for orthologs, allNCBI, bestNCBI parent directories
-    ncbi_taxids = [k.strip() for k in taxid_dict.keys()]
+    ncbi_taxids = [k for k in taxid_dict.keys()]
     for child in ncbi_taxids:
         childpath = "{0}/{1}".format(dir_vars["orthologs_seq"],child)
         create_directory(childpath)
@@ -120,16 +120,16 @@ def directory_variables(config):
     dir_vars = dict(zip(dir_variable_labels,dir_values))
     return dir_vars
 
-def config_initialization():
+def config_initialization(config_path="config/config.txt"):
     """Reads config file, generates directories based on run parameters in config
 
     :return: config: configparser object created from text file at config/config.txt
     :return: taxid_dict: dictionary from NCBI tax id (as string) to species name (with capitalization as standard)
     :return: dir_vars: dictionary from directory path labels to paths
     """
-    config = parse_config()
+    config = parse_config(config_file=config_path)
     dataset_config, taxonomy_config, directory_config = config["DATASET"], config["TAXONOMY"], config["DIRECTORY"]
-    taxids = list(taxonomy_config.keys())
+    taxids = [int(k) for k in taxonomy_config.keys()]
     spec_names = [taxonomy_config[k].strip() for k in taxonomy_config.keys()]
     taxid_dict = dict(zip(taxids,spec_names))
     dir_vars = directory_variables(config)
