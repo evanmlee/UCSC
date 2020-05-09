@@ -2,7 +2,9 @@ import pandas as pd
 import numpy as np
 import os
 from IPython.display import display
-from utility import fastaUtility as fastautil
+from utility import fastaUtility as fastautil, UCSCerrors
+
+import warnings
 
 def drop_NCBI_species_from_UCSC_records(combined_records_df,ncbi_idx,analysis_taxid_dict):
     """Drops UCSC record data for any species tax_ids represented in analysis_taxid_dict.
@@ -94,6 +96,12 @@ def filter_analysis_subset(combined_fasta,records_tsv_fpath,UCSC_analysis_subset
         records_df = drop_NCBI_species_from_UCSC_records(records_df,NCBI_record_subset,taxid_dict)
     if drop_incomplete:
         records_df = drop_incomplete_records(records_df,ncbi_idx=NCBI_record_subset)
+    if len(records_df) == len(NCBI_record_subset) or len(records_df) == 1:
+        emsg = "{0}".format("Analysis records filtering resulted in empty outgroup set.")
+        raise UCSCerrors.SequenceAnalysisError(0,emsg)
+    elif len(records_df.drop(index=NCBI_record_subset)) < 5:
+        wmsg = "Fewer than 5 records in outgroup dataset after filtering from {0}".format(combined_fasta)
+        warnings.warn(wmsg,RuntimeWarning)
     records_df.drop(columns=['sequence'],inplace=True)
     records_df.to_csv(records_tsv_fpath,sep='\t')
     fastautil.filter_fasta_infile(records_df.index,combined_fasta,outfile_path=filtered_outpath)
@@ -132,7 +140,6 @@ def length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath,force_over
         suppl_cols = [col for col in suppl_lm_df.columns if col not in lm_df.columns]
         for col in suppl_cols:
             lm_df.loc[suppl_lm_df.index,col] = suppl_lm_df[col]
-        # display(lm_df)
     else:
         lm_df = pd.read_csv(length_metrics_fpath, sep='\t', index_col=0)
     for tid,row in lm_df.iterrows():
@@ -236,33 +243,9 @@ if __name__ == "__main__":
     if update_checks:
         from utility.directoryUtility import config,taxid_dict,dir_vars
         length_metrics_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
-        # length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath,force_overwrite=True)
-        length_metric_checks(taxid_dict,dir_vars,length_metrics_fpath,how='most',overwrite=True)
+        # length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath,force_overwrite=False)
+        length_metric_checks(taxid_dict,dir_vars,length_metrics_fpath,how='most',overwrite=False)
     checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
     check_df = pd.read_csv(checks_fpath, sep='\t', index_col=0)
     suppl_fpath = "{0}/length_metrics_suppl.tsv".format(dir_vars['combined_run'])
     suppl_df = pd.read_csv(suppl_fpath, sep='\t', index_col=0)
-
-    test_idx = "ENST00000422628.5"
-    test_suppl_row = suppl_df.loc[test_idx]
-    print("check results")
-    display(check_df.loc[test_idx])
-    print("Supplemented lengths:")
-    display(test_suppl_row)
-
-    test_row = suppl_df.loc[test_idx]
-    mm_check_labels = ['euth_median', 'bestncbi_median', '9606_length', '10090_length']
-    hg_check_labels = ['euth_median', 'bestncbi_median', '9606_length', '10090_length', '10181_UCSC_length']
-    mm_len, hg_len = test_row[['9994_length','10181_length']]
-
-    check_lengths = test_row[mm_check_labels]
-    display(check_lengths)
-    diffs = np.abs((check_lengths - mm_len) / check_lengths)
-    display(diffs)
-    display(diffs <= 0.05)
-    checks = (check_lengths - mm_len) / check_lengths <= 0.05
-    display(checks)
-
-    check_lengths = test_row[hg_check_labels]
-    checks = (check_lengths - hg_len) / check_lengths <= 0.05
-    # display(checks)
