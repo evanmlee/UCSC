@@ -12,10 +12,21 @@ def load_transcript_table(transcripts_fpath):
     transcript_table = pd.read_csv(transcripts_fpath,sep='\t',index_col="UCSC_transcript_id")
     return transcript_table
 
-def select_NCBI_records(dir_vars,taxid_dict,UCSC_tid,NCBI_gid,selection="identity"):
-    from IPython.display import display
-    UCSC_parent,allNCBI,bestNCBI = [dir_vars[k] for k in ["UCSC_raw_parent","allNCBI_parent","bestNCBI_parent"]]
+def select_NCBI_records(dir_vars,taxid_dict,UCSC_tid,NCBI_gid):
+    """Given a UCSC transcript ID and corresponding NCBI_gid, selects best fit NCBI records for analysis species based
+    on maximum identity to UCSC records of close evolutionary relatives.
 
+    :param dir_vars: contains directory paths for run/ sequence data
+    :param taxid_dict: maps (int) NCBI Tax IDs to species names
+    :param UCSC_tid: UCSC transcript ID used to locate UCSC sequence data
+    :param NCBI_gid:
+    :return:
+    """
+    #TODO: Add in supplemental lengths
+    CLOSEST_EVO = {9999: ['mm10', 'rn6', 'speTri2'], 29073: ['ailMel1', 'canFam3'],
+                   10181: ['hetGla2', 'mm10', 'rn6'], 9994: ['mm10', 'rn6', 'speTri2']}
+
+    UCSC_parent,allNCBI,bestNCBI = [dir_vars[k] for k in ["UCSC_raw_parent","allNCBI_parent","bestNCBI_parent"]]
     raw_UCSC_fpath = "{0}/{1}.fasta".format(UCSC_parent,UCSC_tid)
     NCBI_all_aln_fpath = "{0}/NCBI_alignments/{1}.fasta".format(allNCBI,NCBI_gid)
     combined_all_aln_fpath = "{0}/combined/{1}.fasta".format(allNCBI,UCSC_tid)
@@ -23,8 +34,7 @@ def select_NCBI_records(dir_vars,taxid_dict,UCSC_tid,NCBI_gid,selection="identit
     UCSC_df = UCSC_fasta_df(raw_UCSC_fpath)
     allNCBI_df = NCBI_fasta_df(NCBI_all_aln_fpath,taxid_dict=taxid_dict)
 
-    CLOSEST_EVO = {9999:['mm10','rn6','speTri2'],29073:['ailMel1','canFam3'],
-                   10181:['hetGla2','mm10','rn6'], 9994:['mm10','rn6','speTri2']}
+
 
     allseq_df = UCSC_df.append(allNCBI_df,sort=False)
     allseq_df.loc[allNCBI_df.index,"NCBI_taxid"] = allNCBI_df["NCBI_taxid"]
@@ -60,13 +70,12 @@ def select_NCBI_records(dir_vars,taxid_dict,UCSC_tid,NCBI_gid,selection="identit
     bestNCBI_df = allNCBI_df.loc[bestNCBI_ids]
     bestNCBI_aln_fpath = "{0}/NCBI_alignments/{1}.fasta".format(bestNCBI,NCBI_gid)
     bestNCBI_all_fpath = "{0}/combined/{1}.fasta".format(bestNCBI,UCSC_tid)
-    if True:#not os.path.exists(bestNCBI_aln_fpath): (os.path check now in outer function in UCSC_filter)
-        filter_fasta_infile(bestNCBI_ids,NCBI_all_aln_fpath,bestNCBI_aln_fpath)
-        final_align_ids = list(UCSC_df.index)
-        final_align_ids.extend(bestNCBI_ids)
-        # print(final_align_ids)
-        filter_fasta_infile(final_align_ids,combined_all_aln_fpath,bestNCBI_all_fpath)
-    #UCSC_euth: Records which taxonomically belong to euarchontoglires or laurasiatheria
+
+    filter_fasta_infile(bestNCBI_ids,NCBI_all_aln_fpath,bestNCBI_aln_fpath)
+    final_align_ids = list(UCSC_df.index)
+    final_align_ids.extend(bestNCBI_ids)
+    filter_fasta_infile(final_align_ids,combined_all_aln_fpath,bestNCBI_all_fpath)
+    #UCSC_euth: Records which taxonomically belong to euarchontoglires or laurasiatheria (ie boreoeutheria)
     UCSC_euth_df = UCSC_df.iloc[:51, :]
     UCSC_euth_mean_len, UCSC_euth_median_len = UCSC_euth_df["length"].mean(), UCSC_euth_df["length"].median()
     allNCBI_mean_len, allNCBI_median_len = allNCBI_df["length"].mean(),allNCBI_df["length"].median()
@@ -79,6 +88,12 @@ def select_NCBI_records(dir_vars,taxid_dict,UCSC_tid,NCBI_gid,selection="identit
     return length_metrics
 
 def filter_allNCBI_data(force_overwrite_tid_subset=[],alt_lm_fpath=""):
+    """
+
+    :param force_overwrite_tid_subset:
+    :param alt_lm_fpath:
+    :return:
+    """
     # Config initialization, taxonomy dictionaries for NCBI species
     config, taxid_dict, dir_vars = directoryUtility.config_initialization()
     spec_name_dict = {taxid_dict[tid]: tid for tid in taxid_dict}

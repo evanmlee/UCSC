@@ -17,6 +17,12 @@ class SequenceDataError(Error):
         self.code = code
         self.message = message
 
+class SequenceAnalysisError(Error):
+    error_type = "SequenceAnalysisError"
+    def __init__(self, code, message):
+        self.code = code
+        self.message = message
+
 class NCBIQueryError(Error):
     error_type = "NCBIQueryError"
     def __init__(self, code, message):

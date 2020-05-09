@@ -184,9 +184,11 @@ def test_outgroup_blosum(col,test_spec_idx,blos_df):
     #test_spec_idx is Pandas Index object, use [0] to get character value instead of Series
     test_var = col[test_spec_idx][0]
     outgroup_col = col.drop(test_spec_idx)
-    outgroup_col = outgroup_col[~outgroup_col.isin(skip_chars)]
+    # outgroup_col = outgroup_col[~outgroup_col.isin(skip_chars)]
+    outgroup_col = outgroup_col[outgroup_col.isin(non_gap_aas)]
     og_col_nd = outgroup_col.values
-    if test_var not in skip_chars:
+    # if test_var not in skip_chars:
+    if test_var in non_gap_aas:
         blos_mean = np.mean(blos_df[test_var][og_col_nd])
     else:
         blos_mean = np.nan
@@ -224,7 +226,8 @@ def pairwise_outgroup_blosum(col,test_spec_idx,blos_df):
     skip_chars = ['-', 'X']
     for i, first in enumerate(og_col):
         for j, second in enumerate(og_col):
-            if i < j and not (first in skip_chars) and not second in skip_chars:
+            # if i < j and not (first in skip_chars) and not second in skip_chars:
+            if i < j and (first in non_gap_aas) and second in non_gap_aas:
                 pairwise_scores.append(blos_df[first][second])
             else:
                 pass
@@ -237,3 +240,5 @@ def pairwise_outgroup_blosum(col,test_spec_idx,blos_df):
 
 #Global variables for module
 aas, blosum62_bg, blos_df, sim_matrix = gen_blos_df()
+
+non_gap_aas = ['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V']
