@@ -76,8 +76,9 @@ def overall_summary_table(dir_vars, xref_table, taxid_dict,
     :param (dict) dir_vars: Contains paths for run-specific directories, see directoryUtility.
     :param (DataFrame) xref_table: Maps UCSC transcript IDs to NCBI Gene IDs
     :param (dict) taxid_dict: maps NCBI taxids to species names
-    :param (array-like) tid_subset: If provided, will only perform analysis for transcript_ids in tid_subset
-    :param (array-like) UCSC_analysis_subset: If provided, limits UCSC sequence data to taxids in UCSC_analysis_subset
+    :param (array-like) tid_subset: If provided, will only attempt analysis for transcript_ids in tid_subset
+
+    :param (array-like) UCSC_tax_subset: If provided, limits UCSC sequence data to taxids in UCSC_tax_subset
     :param use_jsd_gap_penalty: Determines if JSD calculations are performed with gap penalty or not. If you change
     this, it is recommended to set force_recalc to True to avoid any inconsistencies between files calculated before
     the change and after.
@@ -122,7 +123,6 @@ def overall_summary_table(dir_vars, xref_table, taxid_dict,
         check_aes, analysis_error_df = load_errors(tax_analysis_errors_fpath, error_type="SequenceAnalysisError")
         tax_record_errors_fpath = "{0}/{1}_record_errors.tsv".format(summary_run_dir, ncbi_taxid)
         check_res, record_error_df = load_errors(tax_record_errors_fpath)
-        i = 0
         if length_checks:
             col_label = "{0}_check".format(ncbi_taxid)
             lc_col = lc_df[col_label]
@@ -192,10 +192,6 @@ def overall_summary_table(dir_vars, xref_table, taxid_dict,
                 formatted = formatted.rename(columns={'JSD Z-Score':'JSD Alignment Z-Score','Test-Outgroup BLOSUM Z-Score':
                                                 'Test-Outgroup BLOSUM Alignment Z-Score'})
                 overall_df = overall_df.append(formatted, ignore_index=True, sort=False)
-                i+= 1
-                if i >= 100:
-                    overall_df.to_csv(overall_summary_fpath, sep='\t', float_format='%.5f')
-                    i = 0
         # #Unique Substitution Set-wide Z scores for JSD and BLOSUM
         if not skip_overall:
             us_jsd, us_blos = ac.calc_z_scores(overall_df['JSD']), ac.calc_z_scores(overall_df['Test-Outgroup BLOSUM62'])

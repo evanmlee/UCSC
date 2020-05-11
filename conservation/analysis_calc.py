@@ -130,13 +130,6 @@ def generate_jsd_series(test_idx,align_df,
     weights = jsd_calc.calculate_sequence_weights(jsd_nd)
     for i,col in enumerate(jsd_nd.T):
         jsd = jsd_calc.JSD(col,blosum62_bg,weights,aas,use_gap_penalty=use_gap_penalty)
-        # if i==42:
-        #     print(use_gap_penalty)
-        #     print(jsd)
-        #     print("FORCE")
-        #     print(col)
-        #     print(JSDcalc.JSD(col, blosum62_bg, weights, aas, use_gap_penalty=False))
-        #     pass
         jsd_srs[i+1] = jsd
     jsd_zscores = calc_z_scores(jsd_srs)
     return jsd_srs, jsd_zscores
@@ -173,22 +166,19 @@ def variant_counts(col,test_spec_idx):
     return vc_metrics
 
 def test_outgroup_blosum(col,test_spec_idx,blos_df):
-    """Calculates average BLOSUM62 score of the test species variant in col against all outgroup variants. NaN for gaps.
+    """Calculates average BLOSUM62 score of the test species variant in col against all outgroup variants. NaN for gaps
+    or other ambiguous IUPAC characters (ie B, U, X)
 
     :param col: pandas Series corresponding to column from align_df
     :param test_spec_idx: index corresponding to test species
     :param blos_df: DataFrame corresponding to blosum matrix; index and columns are amino acid characters
     :return: Average test variant vs outgroup variant blosum scores for col.
     """
-    skip_chars = ['X','-','U']
-    #test_spec_idx is Pandas Index object, use [0] to get character value instead of Series
     test_var = col[test_spec_idx][0]
     outgroup_col = col.drop(test_spec_idx)
-    # outgroup_col = outgroup_col[~outgroup_col.isin(skip_chars)]
-    outgroup_col = outgroup_col[outgroup_col.isin(non_gap_aas)]
+    outgroup_col = outgroup_col[outgroup_col.isin(NON_GAP_AAS)]
     og_col_nd = outgroup_col.values
-    # if test_var not in skip_chars:
-    if test_var in non_gap_aas:
+    if test_var in NON_GAP_AAS:
         blos_mean = np.mean(blos_df[test_var][og_col_nd])
     else:
         blos_mean = np.nan
@@ -227,7 +217,7 @@ def pairwise_outgroup_blosum(col,test_spec_idx,blos_df):
     for i, first in enumerate(og_col):
         for j, second in enumerate(og_col):
             # if i < j and not (first in skip_chars) and not second in skip_chars:
-            if i < j and (first in non_gap_aas) and second in non_gap_aas:
+            if i < j and (first in NON_GAP_AAS) and second in NON_GAP_AAS:
                 pairwise_scores.append(blos_df[first][second])
             else:
                 pass
@@ -241,4 +231,4 @@ def pairwise_outgroup_blosum(col,test_spec_idx,blos_df):
 #Global variables for module
 aas, blosum62_bg, blos_df, sim_matrix = gen_blos_df()
 
-non_gap_aas = ['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V']
+NON_GAP_AAS = ['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V']
