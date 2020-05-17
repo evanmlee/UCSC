@@ -194,54 +194,6 @@ def write_ortholog_errors(taxid_dict,dir_vars,outpath="",overwrite=False):
         print("Number of UCSC Transcript IDs with 'dropped from analysis' errors: {0}".format(len(ambig_errors)))
         print("Existing allNCBI file path count for ambigous error tids: {0}".format(allncbi_fpath_count))
 
-def allseq_NCBI_UCSC_slignment(NCBI_xref_df, taxid_dict, dir_vars,gid_subset=[]):
-    """File preparation for allNCBI data. Prepares: 1) compiled NCBI raw and aligned data and 2) all NCBI data profiled
-    aligned against corresponding UCSC data.
-
-    :param NCBI_xref_df:
-    :param taxid_dict:
-    :param dir_vars:
-    :param gid_subset:
-    :return:
-    """
-    from utility.fastaUtility import MSA_fpath_list, profile_MSA
-    # Directory paths
-    dir_labels = ["orthologs_parent","orthologs_aa","UCSC_raw_parent","allNCBI_parent"]
-    orthologs_dir, orthologs_aa, ucsc_raw, allNCBI_parent = [dir_vars[label] for label in dir_labels]
-    subdirs = ["NCBI_raw","NCBI_alignments","combined"]
-    allNCBI_raw,allNCBI_alignments,allNCBI_combined = ["{0}/{1}".format(allNCBI_parent,sub) for sub in subdirs]
-
-    for UCSC_tid, row in NCBI_xref_df.iterrows():
-        NCBI_gid = row["NCBI_gid"]
-        force_filewrite = False
-        if len(gid_subset) > 0:
-            if NCBI_gid not in gid_subset:
-                continue
-            else:
-                force_filewrite = True
-        fpath_list = []
-        for taxid in taxid_dict:
-            NCBI_fpath = "{0}/{1}/{2}.fasta".format(orthologs_aa, taxid, NCBI_gid)
-            if (os.path.exists(NCBI_fpath)):
-                fpath_list.append(NCBI_fpath)
-        if len(fpath_list) > 0:
-            NCBI_raw_fpath = "{0}/{1}.fasta".format(allNCBI_raw, NCBI_gid)
-            NCBI_alignment_fpath = "{0}/{1}.fasta".format(allNCBI_alignments, NCBI_gid)
-            if not os.path.exists(NCBI_alignment_fpath) or force_filewrite:
-                MSA_fpath_list(fpath_list, NCBI_raw_fpath, NCBI_alignment_fpath)
-
-            combined_alignment_fpath = "{0}/{1}.fasta".format(allNCBI_combined, UCSC_tid)
-            if not os.path.exists(combined_alignment_fpath) or force_filewrite:
-                UCSC_raw_tid_fasta = "{0}/{1}.fasta".format(ucsc_raw, UCSC_tid)
-                try:
-                    assert (os.path.exists(UCSC_raw_tid_fasta))
-                    assert (os.path.exists(NCBI_alignment_fpath))
-                    profile_MSA(in1_fpath=UCSC_raw_tid_fasta, in2_fpath=NCBI_alignment_fpath,
-                                out_fpath=combined_alignment_fpath)
-                except AssertionError as e:
-                    print("UCSC_tid_fasta_path: {0}".format(UCSC_raw_tid_fasta))
-                    print("NCBI_alignment_fpath: {0}".format(NCBI_alignment_fpath))
-
 def main():
     from IPython.display import display
     from utility.directoryUtility import config,taxid_dict,dir_vars
@@ -308,11 +260,6 @@ def main():
         query_error_path = "{0}/errors_ncbiquery.tsv".format(dir_vars['summary_run'])
         outpath = "{0}/ortholog_errors.tsv".format(dir_vars['summary_run'])
         write_ortholog_errors(taxid_dict,dir_vars,outpath=outpath)
-
-    process_allNCBI = False
-    if process_allNCBI:
-        NCBI_xrefs = orutil.load_NCBI_xref_table(NCBI_xref_inpath, gid_dtype='int')
-        allseq_NCBI_UCSC_slignment(NCBI_xrefs,taxid_dict,dir_vars,gid_subset=diff_df.index.values)
 
 if __name__ == "__main__":
     main()

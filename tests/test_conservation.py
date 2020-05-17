@@ -206,7 +206,6 @@ class ConservationTest(unittest.TestCase):
             ncbi_cols = row[ncbi_col_labels]
             precalc_bn_mean, precalc_bn_med = row['bestncbi_mean'], row['bestncbi_median']
             recalc_bn_med = np.nanmedian(ncbi_cols)
-            recalc_bn_med = np.nanmedian(ncbi_cols)
             self.assertTrue(recalc_bn_med == precalc_bn_med)
             self.assertTrue(precalc_bn_mean == precalc_bn_mean)
 
@@ -289,7 +288,7 @@ class ConservationTest(unittest.TestCase):
         self.assertTrue(len(sub_thresh_len) == 0)
 
         cs.overall_summary_table(dir_vars, xref_df, taxid_dict, UCSC_tax_subset=ucsc_tax_subset,
-                                 length_checks_fpath=length_checks_fpath,skip_overall=False)
+                                 length_checks_fpath=length_checks_fpath)#,skip_overall=False)
 
     def test_blosum(self):
         from utility.directoryUtility import dir_vars

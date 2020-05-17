@@ -8,7 +8,7 @@ class FastaDataFrameTest(unittest.TestCase):
 
     def test_load_combined_df(self):
         config,taxid_dict,dir_vars = directoryUtility.config_initialization()
-        test_fpath = "combined_alignments/hg38AA_knownCanonical/4species1/bestNCBI/combined/ENST00000002596.6.fasta"
+        test_fpath = "tests/test_data/combined/ENST00000002596.6.fasta"
         df = fastaUtility.load_UCSC_NCBI_df(test_fpath,taxid_dict)
         # UCSC_euth: Records which taxonomically belong to euarchontoglires or laurasiatheria
         euth_tax_df = df.iloc[:51, :]
@@ -56,6 +56,21 @@ class FastaDataFrameTest(unittest.TestCase):
         ucsc_tax_table = fastaUtility.ucsc_tax_table
         # with pd.option_context('display.max_rows',None):
         #     display(ucsc_tax_table.loc[:,['common_name','tax_name','NCBI_taxid']])
+
+    def test_poorly_formatted_orthologs(self):
+        from Bio import SeqIO
+        test_fpath = "tests/test_data/NCBI_orthologs/2350.fasta"
+        fastas = SeqIO.parse(test_fpath,'fasta')
+        fasta_ids = [fasta.id for fasta in fastas]
+        self.assertTrue(len(fasta_ids)==0)
+
+    def test_parse_NCBI_df_unformatted_fasta(self):
+        from utility.directoryUtility import taxid_dict
+        test_fpath = "tests/test_data/best_raw/ENST00000236850.4.fasta"
+        ncbi_df = fastaUtility.NCBI_fasta_df(test_fpath,taxid_dict)
+        with pd.option_context('display.max_columns',None):
+            display(ncbi_df)
+
 
 if __name__ == "__main__":
     unittest.main()
