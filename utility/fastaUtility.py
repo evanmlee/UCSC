@@ -12,7 +12,7 @@ import warnings
 
 def ordered_record_generator(fpath,ordered_ids):
     """Generates Seq records from fpath, limited to ordered_ids if provided. Generator order is order in ordered_ids.
-    Internally tracks yielded record ids to eliminate duplicates.
+    Internally tracks yielded record ids to eliminate duplicates (keeps first duplicate only).
     :param fpath: Fasta file path
     :param ordered_ids: array-like containing ordered record ids
     :return:
@@ -28,7 +28,8 @@ def ordered_record_generator(fpath,ordered_ids):
                     break
 
 def record_generator(fpath,ids=[]):
-    """Generates Seq records from fpath, limited to ids if provided. Ordered as in fpath
+    """Generates Seq records from fpath, limited to ids if provided. Ordered as in fpath.
+    Internally tracks yielded record ids to eliminate duplicates (keeps first duplicate only).
     :param fpath: Fasta file path
     :param ids: If provided, only yield records corresponding to record ids provided. Default value causes all records
     to be present in generator
@@ -42,6 +43,14 @@ def record_generator(fpath,ids=[]):
                     (len(ids)==0)) and fasta.id not in yielded:
                 yielded.add(fasta.id)
                 yield fasta
+
+def UCSC_subtax_generator(UCSC_fpath,clade='all'):
+    low,high = UCSC_clade_positions(clade)
+    idx = 0
+    for fasta in SeqIO.parse(UCSC_fpath,'fasta'):
+        if idx >= low and idx < high:
+            yield fasta
+        idx += 1
 
 def UCSC_NCBI_generator(UCSC_fpath,NCBI_fpath,ucsc_subset=[],ncbi_subset=[],ordered=False):
     """Generator object that yields all Bio.Seq objects in ODB_fpath and then NCBI_fpath, filtered down with optional
@@ -127,8 +136,18 @@ def profile_MSA(in1_fpath, in2_fpath, out_fpath):
     """Generates profile-profile alignment of records from in1_fpath and in2_fpath and writes to out_fpath
     :return: N/A
     """
-    subprocess.run(args=['./muscle', '-profile', '-in1', in1_fpath,
+    subprocess.run(args=['./muscle', '-profile', '-quiet','-in1', in1_fpath,
                          '-in2', in2_fpath, '-out', out_fpath])
+
+def MSA(in_fpath,out_fpath,aln_program='muscle'):
+    """Generates a multiple sequence alignment at out_fpath using the specified program."""
+    if aln_program == 'muscle':
+        subprocess.run(args=['./muscle','-quiet','-in', in_fpath, '-out', out_fpath])
+    elif aln_program == 'kalign':
+        args = ['kalign']
+        subprocess.run(args=args, stdin=in_fpath, stdout=out_fpath, stderr=subprocess.PIPE, text=True)
+    else:
+        raise ValueError("Parameter 'aln_program' must be 'muscle' or 'kalign'.")
 
 def fpath_list_record_generator(fpath_list):
     """Creates a generator object which yiellds all the sequences contained in the files in fpath_list.
@@ -169,26 +188,21 @@ def MSA_fpath_list(fpath_list, combined_outpath, aligned_outpath,aln_program='mu
     """
     combined_generator = fpath_list_record_generator(fpath_list)
     SeqIO.write(combined_generator, combined_outpath, "fasta")
-    if aln_program == 'muscle':
-        subprocess.run(args=['./muscle', '-in', combined_outpath,
-                         '-out', aligned_outpath])
-    elif aln_program == 'kalign':
-        args = ['kalign']
-        subprocess.run(args=args, stdin=combined_outpath, stdout=aligned_outpath, stderr=subprocess.PIPE, text=True)
+    MSA(combined_outpath,aligned_outpath,aln_program)
 
-
-def construct_id_dm(seq_df, seq_fpath, align_outpath="tmp/iddm_align.fasta", ordered=False, aligned=False):
+def construct_id_dm(record_ids, seq_fpath, align_outpath="tmp/iddm_align.fasta", ordered=False,filtered=False,aligned=False):
     """Constructs an np.ndarray corresponding to the identity distance matrix of records in seq_df. Different from
     SSfasta version, uses MUSCLE for alignment and allows for aligned parameter to prevent unnecessary MUSCLE calls.
 
-    :param seq_df: DataFrame of OrthoDB/ NCBI sequence records; should only contain records for which identity
-    distance matrix will be computed
+    :param record_ids: Record IDs for which identity distance matrix will be computed
     :param seq_fpath:  Path of fasta file containing at least all of the records in seq_df. Can contain more records
     than are in seq_df - a temporary file containing only the records in seq_df.index will be generated (filtered_fpath)
     :param align_outpath: Optional filepath. If provided, the resulting alignment will be stored there. Otherwise,
     written to a temporary file (tmp/iddm_align.fasta)
     :param ordered: boolean. True: distance matrix rows will be ordered by the order of records in seq_df.index;
     False: distance matrix rows will be ordered by the order of records in seq_fpath
+    :param: (boolean) filtered: If True, unfiltered record set from seq_fpath will be used for alignment and dm calc.
+    :param: (boolean) aligned: If True, filtered records from seq_fpath must be aligned and ready for use in dm calculation.
     :return: id_dm: np.ndarray of identity distance matrix calculated by AlignIO
     :return: align_srs: pandas Series object containing aligned sequences
     """
@@ -196,18 +210,20 @@ def construct_id_dm(seq_df, seq_fpath, align_outpath="tmp/iddm_align.fasta", ord
     from Bio import AlignIO
 
     # Filter records in seq_fpath to new fasta only containing records in seq_df.index
-    filtered_fpath = "tmp/iddm.fasta"
-    filter_fasta_infile(seq_df.index, seq_fpath, outfile_path=filtered_fpath, ordered=ordered)
+    if not filtered:
+        filtered_fpath = "tmp/iddm.fasta"
+        filter_fasta_infile(record_ids, seq_fpath, outfile_path=filtered_fpath, ordered=ordered)
+    else:
+        filtered_fpath = seq_fpath
     if not aligned:
         # MUSCLE align sequences from filtered_fpath to align_outpath
-        subprocess.run(args=['./muscle', '-in', filtered_fpath, \
-                             '-out', align_outpath])
+        MSA(filtered_fpath,align_outpath,aln_program='muscle')
     else:
         #Use filtered file from filter_fasta_infile as input for identity distmat
         align_outpath = filtered_fpath
     align_srs = fasta_to_srs(align_outpath)
     with open(align_outpath) as align_f:
-        aln = AlignIO.read(open(align_outpath), 'fasta')
+        aln = AlignIO.read(align_outpath, 'fasta')
         calculator = DistanceCalculator('identity')
         id_dm_obj = calculator.get_distance(aln)
     # Convert AlignIO object to np.ndarray
@@ -293,7 +309,7 @@ def seq_srs_to_align_df(seq_srs, align_in_fpath, align_out_fpath):
     is an alignment position and column. Writes input fasta and output fastas for alignment to align_in_fpath
     and align_out_fpath respectively. Also returns average (non-diagonal) identity distances"""
     srs_to_fasta(seq_srs, align_in_fpath)
-    n, ordered_ids, id_dm, align_srs = construct_id_dm(seq_srs, align_in_fpath, align_out_fpath)
+    id_dm, align_srs = construct_id_dm(seq_srs.index, align_in_fpath, align_out_fpath)
     align_df = align_srs_to_df(align_srs)
     return align_df
 
@@ -379,20 +395,25 @@ def UCSC_fasta_df(fasta_inpath):
     fasta_df.index.name = "record_id"
     return fasta_df
 
+def UCSC_clade_positions(clade):
+    """Maps clade string identifier to low,high 0-indexed positions in UCSC tax_table or alignments for use in slices"""
+    clade = clade.lower()
+    clades = ['all','mammalia', 'boreoeutheria', 'euarchontoglires', 'primates']
+    pos_tups = [(0,100),(0, 62), (0, 51), (0, 26), (0, 12)]
+    idx_dict = dict(zip(clades, pos_tups))
+    if clade not in clades:
+        raise ValueError("Please specify accepted clade value (mammalia, boreoeutheria, euarchontoglires, primates.")
+    else:
+        low, high = idx_dict[clade]
+    return low,high
+
 def partition_UCSC_by_clade(fasta_df,clade):
     """
     :param fasta_df: Records DataFrame to filter data from
     :param (str) clade:
     :return:
     """
-    clade = clade.lower()
-    clades = ['mammalia','boreoeutheria','euarchontoglires','primates']
-    pos_tups = [(0,62),(0,51),(0,26),(0,12)]
-    idx_dict = dict(zip(clades,pos_tups))
-    if clade not in clades:
-        raise ValueError("Please specify accepted clade value (mammalia, boreoeutheria, euarchontoglires, primates.")
-    else:
-        low,high = idx_dict[clade]
+    low,high = UCSC_clade_positions(clade)
     incl_df,rest_df = partition_UCSC_by_position(fasta_df,low,high)
     return incl_df, rest_df
 
