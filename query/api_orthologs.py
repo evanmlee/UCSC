@@ -169,15 +169,10 @@ def species_ortholog_request(NCBI_protein_ID_table,spec_fasta_fpath,spec_gid,tax
 
 def fetch_NCBI_protein_records(NCBI_gid_df, taxid_dict, dir_vars,
                                overwrite_fasta=[], NCBI_api_key='',tax_subset=None):
-    """Downloads NCBI protein records for each NCBI Gene ID listed in AGS_gene_id_df.
-
-    AGS_gene_id_df: DataFrame object with required columns 'Gene Symbol' and 'AGS Gene ID.' Gene symbol
-    entries are used to name fasta files downloaded; AGS Gene IDs are queried using Entrez elink
-    to 1) match Gene ID to all corresponding Protein IDs and 2) download those Protein IDs into one fasta
-    file, saved into NCBI_homology_dirpath
+    """
     """
 
-    orthologs_dir, orthologs_seq = dir_vars["orthologs_parent"],dir_vars["orthologs_seq"]
+    orthologs_dir, orthologs_aa = dir_vars["orthologs_parent"],dir_vars["orthologs_aa"]
     if NCBI_api_key:
         api_key_ext = "&api_key={0}".format(NCBI_api_key)
     else:
@@ -203,7 +198,7 @@ def fetch_NCBI_protein_records(NCBI_gid_df, taxid_dict, dir_vars,
         for taxid in taxid_dict:
             gid_col = "{0}_gid".format(taxid)
             spec_gid = row[gid_col]
-            spec_fasta_fpath = "{0}/{1}/{2}.fasta".format(orthologs_seq,taxid,NCBI_hgid)
+            spec_fasta_fpath = "{0}/{1}/{2}.fasta".format(orthologs_aa,taxid,NCBI_hgid)
             #Check for initiating NCBI elink/efetch calls: If 1) spec_gid is not null and 2)
             #Fastas fetch not done previously or is being forced by overwrite_fasta
             if NCBI_hgid in overwrite_fasta and os.path.exists(spec_fasta_fpath):
@@ -212,3 +207,51 @@ def fetch_NCBI_protein_records(NCBI_gid_df, taxid_dict, dir_vars,
                     and type(spec_gid) == str:
                 species_ortholog_request(NCBI_protein_ID_table,spec_fasta_fpath,spec_gid,taxid,NCBI_hgid,
                                          api_key_ext=api_key_ext,pid_tsv_fpath=protein_ID_tsv_fpath)
+
+
+def mrna_ortholog_request(dir_vars,gid,taxid,best_record_id,pid_str):
+    """Given NCBI Gene ID, taxonomy ID for species, and accession number for best Protein record, downloads corresponding
+    Nucleotide data to subdirectory in dir_vars['orthologs_nuc'].
+
+    :param (dict) dir_vars: Contains directory paths for run
+    :param gid: NCBI human Gene ID, used to find ortholog files and name Nucleotide fasta
+    :param taxid: Taxonomy ID for which ortholog is being fetched
+    :param best_record_id: Protein Record ID from best NCBI record for ortholog specified by taxid/ gid
+    :param (str) pid_str: Field from Protein ID table, comma separated ID nunmbers for Protein/ Nucleotide
+    :return: N/A. writes coding sequence nucleotide fasta to file in subdirectory of orthologs_nuc
+    """
+    from Bio import SeqIO
+    pid_list = pid_str.split(',')
+
+    tax_orthologs_fpath = "{0}/{1}/{2}.fasta".format(dir_vars['orthologs_aa'],taxid,gid)
+    tax_fastas = SeqIO.parse(tax_orthologs_fpath,'fasta')
+    best_idx = -1
+    for i,fasta in enumerate(tax_fastas):
+        if fasta.id == best_record_id:
+            best_idx = i
+    assert(best_idx != -1)
+    pid = pid_list[best_idx]
+    efetch_req = "efetch.fcgi?db=protein&id={0}&rettype=fasta_cds_na&retmode=text".format(pid)
+    efetch_url = ENTREZ_BASE_URL + efetch_req
+    tax_nuc_fasta_path = "{0}/{1}/{2}.fasta".format(dir_vars['orthologs_nuc'],taxid,gid)
+    subprocess.run(args=['wget', efetch_url, '-O', tax_nuc_fasta_path])
+
+def fetch_mrna_records(dir_vars,taxid_dict,xref_fpath,protein_id_fpath,length_checks_fpath=""):
+    #TODO fill me in
+    xref_df = load_NCBI_xref_table(xref_fpath)
+    pid_df = pd.read_csv(protein_id_fpath,sep='\t',index_col=0)
+
+    if not length_checks_fpath:
+        check_lengths= False
+    else:
+        lc_df = pd.read_csv(length_checks_fpath,sep='\t',index_col=0)
+        check_lengths = True
+
+from query import orthologUtility as orutil
+from IPython.display import display
+from utility.directoryUtility import dir_vars,taxid_dict
+# NCBI_gid_df = orutil.load_orthologs_table("NCBI_orthologs/orthologs_final.tsv")
+# filt = NCBI_gid_df.loc[[2268],:]
+# display(filt)
+# fetch_NCBI_protein_records(filt, taxid_dict, dir_vars,
+#                                overwrite_fasta=[2268], NCBI_api_key='',tax_subset=None)

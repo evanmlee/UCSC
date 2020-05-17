@@ -174,14 +174,14 @@ def write_ortholog_errors(taxid_dict,dir_vars,outpath="",overwrite=False):
         ambig_orthologs = final_orthologs_df.loc[dd_gids,:]
         display(ambig_orthologs)
 
-        orthologs_seq, allncbi_dir = dir_vars['orthologs_seq'],dir_vars['allNCBI_parent']
+        orthologs_aa, allncbi_dir = dir_vars['orthologs_aa'],dir_vars['allNCBI_parent']
         ambig_orthologs_df_count = ambig_orthologs.count()
         print("Valid ortholog gids for ambiguous error GIDs: {0}".format(sum(ambig_orthologs_df_count)))
 
         file_exists_count = 0
         for gid in ambig_orthologs.index:
             for taxid in taxid_dict:
-                ortho_fpath = "{0}/{1}/{2}.fasta".format(orthologs_seq,taxid,gid)
+                ortho_fpath = "{0}/{1}/{2}.fasta".format(orthologs_aa,taxid,gid)
                 if os.path.exists(ortho_fpath):
                     file_exists_count += 1
         print("Existing ortholog file path count for ambigous error orthologs: {0}".format(file_exists_count))
@@ -206,8 +206,8 @@ def allseq_NCBI_UCSC_slignment(NCBI_xref_df, taxid_dict, dir_vars,gid_subset=[])
     """
     from utility.fastaUtility import MSA_fpath_list, profile_MSA
     # Directory paths
-    dir_labels = ["orthologs_parent","orthologs_seq","UCSC_raw_parent","allNCBI_parent"]
-    orthologs_dir, orthologs_seq, ucsc_raw, allNCBI_parent = [dir_vars[label] for label in dir_labels]
+    dir_labels = ["orthologs_parent","orthologs_aa","UCSC_raw_parent","allNCBI_parent"]
+    orthologs_dir, orthologs_aa, ucsc_raw, allNCBI_parent = [dir_vars[label] for label in dir_labels]
     subdirs = ["NCBI_raw","NCBI_alignments","combined"]
     allNCBI_raw,allNCBI_alignments,allNCBI_combined = ["{0}/{1}".format(allNCBI_parent,sub) for sub in subdirs]
 
@@ -221,7 +221,7 @@ def allseq_NCBI_UCSC_slignment(NCBI_xref_df, taxid_dict, dir_vars,gid_subset=[])
                 force_filewrite = True
         fpath_list = []
         for taxid in taxid_dict:
-            NCBI_fpath = "{0}/{1}/{2}.fasta".format(orthologs_seq, taxid, NCBI_gid)
+            NCBI_fpath = "{0}/{1}/{2}.fasta".format(orthologs_aa, taxid, NCBI_gid)
             if (os.path.exists(NCBI_fpath)):
                 fpath_list.append(NCBI_fpath)
         if len(fpath_list) > 0:

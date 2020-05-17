@@ -2,9 +2,9 @@ import pandas as pd
 import numpy as np
 import os
 
-def load_orthologs_table(orthologs_fpath,gid_dtype='str'):
+def load_orthologs_table(orthologs_fpath,gid_dtype='str',index_type='int'):
     ortholog_table = pd.read_csv(orthologs_fpath,sep='\t',index_col=0,dtype=gid_dtype)
-    # ortholog_table.index = ortholog_table.index.astype('str')
+    ortholog_table.index = ortholog_table.index.astype(index_type)
     return ortholog_table
 
 def load_NCBI_xref_table(NCBI_xrefs_fpath,gid_dtype='str'):

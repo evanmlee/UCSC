@@ -74,7 +74,7 @@ def print_errors(errors_df,tid,message=None,error_type=None):
         tid, error_type, error_code, error_msg = error_row.values
         print("{0}\t{1}\t{2}\t{3}".format(tid, error_type, error_code, error_msg))
 
-def load_errors(errors_fpath,error_type=""):
+def load_errors(errors_fpath,error_type="",error_codes=[]):
     """Loads errors_df from specified file path. Used to prevent repeat operations that generate errors (ie failed
     OrthoDB or NCBI queries, lack of available GeneCards alias data
 
@@ -90,6 +90,8 @@ def load_errors(errors_fpath,error_type=""):
             errors_df = errors_df.reset_index()
         if error_type:
             errors_df = errors_df.loc[errors_df['error_type'] == error_type, :]
+        if error_codes:
+            errors_df = errors_df.loc[errors_df['error_code'].isin(error_codes), :]
         if len(errors_df) == 0:
             check_error_df = False
         else:
@@ -100,15 +102,34 @@ def load_errors(errors_fpath,error_type=""):
         return check_error_df, pd.DataFrame(columns=['tid','error_type','error_code','error_message'])
 
 def add_gene_symbol(errors_fpath,xref_fpath,outpath=""):
-    errors_df = load_errors(errors_fpath)
+    check_errors, errors_df = load_errors(errors_fpath)
     xref_df = pd.read_csv(xref_fpath, sep='\t', index_col=0)
     errors_df.loc['gene_symbol'] = xref_df.loc[errors_df.index,'HGNC_symbol']
     if outpath and not outpath == errors_fpath:
         errors_df.to_csv(outpath,sep='\t')
     return errors_df
 
+def load_all_taxid_errors(dir_vars,taxid_dict,log_type='record',error_type="",error_codes=[]):
+    """Loads all taxid specific error DataFrames. Returns dictionaries mapping taxid to 1) file path 2) boolean flag
+    and 3) DataFrame
+    :param dir_vars: Contains directory variables
+    :param taxid_dict: Maps Taxonomy ID to species names for all species in NCBI sequence data
+    :param log_type: string, must be 'record' or 'analysis' corresponding to which error_files to load.
+    :return:
+    """
+    summary_run = dir_vars['summary_run']
+    fpaths, check_flags, error_dfs = {}, {}, {}
+    for taxid in taxid_dict:
+        if log_type=='record':
+            errors_fpath = "{0}/{1}_record_errors.tsv".format(summary_run,taxid)
+        elif log_type=='analysis':
+            errors_fpath = "{0}/{1}_analysis_errors.tsv".format(summary_run, taxid)
+        check, df = load_errors(errors_fpath,error_type=error_type,error_codes=error_codes)
+        fpaths[taxid], check_flags[taxid], error_dfs[taxid] = errors_fpath,check,df
+    return fpaths, check_flags, error_dfs
+
+
+
 from utility.directoryUtility import dir_vars
-from IPython.display import display
-errors_fpath = "{0}/errors.tsv".format(dir_vars['summary_run'])
-errors_df = load_errors(errors_fpath)
-# display(errors_df)
+# errors_fpath = "{0}/errors.tsv".format(dir_vars['summary_run'])
+# errors_df = load_errors(errors_fpath)

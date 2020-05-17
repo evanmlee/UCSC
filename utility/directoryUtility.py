@@ -44,20 +44,29 @@ def create_run_directories(dir_vars,taxid_dict):
             create_directory(dir_var)
     #tmp file storage (distance matrix calculations, etc)
     create_directory("tmp")
+    empty_directory("tmp")
     create_directory("tests/tmp")
     #creates defined directory structure for orthologs, allNCBI, bestNCBI parent directories
     ncbi_taxids = [k for k in taxid_dict.keys()]
     for child in ncbi_taxids:
-        childpath = "{0}/{1}".format(dir_vars["orthologs_seq"],child)
+        childpath = "{0}/{1}".format(dir_vars["orthologs_aa"],child)
         create_directory(childpath)
-    allNCBI_children = ["combined","NCBI_alignments","NCBI_raw"]
+        childpath = "{0}/{1}".format(dir_vars["orthologs_nuc"], child)
+        create_directory(childpath)
+    # allNCBI_children = ["combined","NCBI_alignments","NCBI_raw"]
+    allNCBI_children = ["evo_relative_alignments"]
     for child in allNCBI_children:
         childpath = "{0}/{1}".format(dir_vars["allNCBI_parent"], child)
-        create_directory(childpath)
-    bestNCBI_children = ["combined","NCBI_alignments"]
+        for taxid in ncbi_taxids:
+            taxpath = "{0}/{1}".format(childpath,taxid)
+            create_directory(taxpath)
+    # bestNCBI_children = ["combined","NCBI_alignments"]
+    bestNCBI_children = ["combined","best_raw"]
     for child in bestNCBI_children:
         childpath = "{0}/{1}".format(dir_vars["bestNCBI_parent"], child)
-        create_directory(childpath)
+        for taxid in ncbi_taxids:
+            taxpath = "{0}/{1}".format(childpath, taxid)
+            create_directory(taxpath)
     #summary child directory creation
     for child in ["conservation","RER"]:
         childpath = "{0}/{1}".format(dir_vars["summary_run"], child)
@@ -100,7 +109,7 @@ def directory_variables(config):
     run_name = directory_config["CombinedRunSubDir"]
 
     orthologs_parent = "NCBI_orthologs"
-    orthologs_seq_parent = "{0}/{1}".format(orthologs_parent,dataset_config["SeqFormat"])
+    orthologs_aa_seq, orthologs_nuc_seq = "{0}/AA".format(orthologs_parent), "{0}/Nuc".format(orthologs_parent)
     combined_run = "{0}/{1}/{2}".format(combined_parent, dataset_identifier, run_name)
     UCSC_raw_parent = "{0}/{1}".format(reorg_parent, dataset_identifier)
     xref_summary = "{0}/xref_summary_{1}".format(reorg_parent, dataset_name)
@@ -110,11 +119,11 @@ def directory_variables(config):
     summary_run = "summary/{0}/{1}".format(dataset_identifier,run_name)
 
     dir_variable_labels = ["reorg_parent","dataset_name","dataset_identifier",
-                           "orthologs_parent", "orthologs_seq",
+                           "orthologs_parent", "orthologs_aa", "orthologs_nuc",
                            "xref_xml","xref_summary",
                           "combined_run","UCSC_raw_parent","allNCBI_parent","bestNCBI_parent","summary_run"]
     dir_values = [reorg_parent,dataset_name,dataset_identifier,
-                  orthologs_parent, orthologs_seq_parent,
+                  orthologs_parent, orthologs_aa_seq, orthologs_nuc_seq,
                   xref_xml,xref_summary,
                   combined_run,UCSC_raw_parent,allNCBI_parent,bestNCBI_parent,summary_run]
     dir_vars = dict(zip(dir_variable_labels,dir_values))
