@@ -173,61 +173,6 @@ class NCBIfilterTest(unittest.TestCase):
         self.assertTrue(lm_df.loc[test_tid, '43179_length'] == 0)
         self.assertTrue(type(lm_df.loc[test_tid,'NCBI_hgid']) == str)
 
-    def test_best_ncbi_alignment_types(self):
-        from utility.fastaUtility import filter_fasta_infile, profile_MSA, UCSC_fasta_df, partition_UCSC_by_clade
-        from utility.directoryUtility import dir_vars
-        from Bio import SeqIO
-        from utility import NCBIfilter as filt
-        ucsc_tid, taxid, NCBI_hgid = 10181, "ENST00000381223.9", 9189
-        bestNCBI_record_id = "XP_021102011.1"
-        evo_record_idx = filt.evo_relative_alignment(dir_vars, taxid, ucsc_tid, NCBI_hgid)
-        orthologs_aa, allNCBI, bestNCBI = [dir_vars[label] for label in
-                                           ['orthologs_aa', 'allNCBI_parent', 'bestNCBI_parent']]
-        ucsc_raw_fpath = "{0}/{1}.fasta".format(dir_vars['UCSC_raw_parent'], ucsc_tid)
-        ortholog_fasta_fpath = "{0}/{1}/{2}.fasta".format(orthologs_aa, taxid, NCBI_hgid)
-        evo_rel_aln_fpath = "{0}/evo_relative_alignments/{1}/{2}.fasta".format(allNCBI, taxid, ucsc_tid)
-        best_raw_fpath = "{0}/best_raw/{1}/{2}.fasta".format(bestNCBI, taxid, ucsc_tid)
-        # Test alignment: all ucsc raw against unfiltered evo_relative alignment (variable UCSC:NCBI record ratio)
-        # test_all_evo_fpath = "tmp/allucsc_allevoaln.fasta"
-        # fautil.profile_MSA(ucsc_raw_fpath, evo_rel_aln_fpath, test_all_evo_fpath)
-        # Filter evo_aln_fasta to just evo_record_idx and best record id (no realignment), then profile againdt ucsc_raw
-        best_evo_aln_filtered = "tmp/best_evo_aln_filtered.fasta"
-        best_evo_aln_ids = list(evo_record_idx)
-        best_evo_aln_ids.append(bestNCBI_record_id)
-        filter_fasta_infile(best_evo_aln_ids, evo_rel_aln_fpath, outfile_path=best_evo_aln_filtered)
-        test_beaf_outpath = "tmp/allucsc_bestevofiltered.fasta"
-        profile_MSA(ucsc_raw_fpath, best_evo_aln_filtered, test_beaf_outpath)
-
-        # Realign best ncbi record against raw ucsc data for evo_record_idx
-        tmp_evo_records, tmp_bestevo_realn = "tmp/evo_records.fasta", "tmp/best_evo_aln_realigned.fasta"
-        filter_fasta_infile(evo_record_idx, ucsc_raw_fpath, outfile_path=tmp_evo_records)
-        profile_MSA(tmp_evo_records, best_raw_fpath, out_fpath=tmp_bestevo_realn)
-        test_allucsc_bestevoaln = "tmp/allucsc_bestevorealigned.fasta"
-        profile_MSA(ucsc_raw_fpath, tmp_bestevo_realn, test_allucsc_bestevoaln)
-
-        # Profile align UCSC raw against ucsc evo relative data using alignment from forced realign against best_ncbi
-        tmp_aligned_evo_records = "tmp/evo_records_prealigned.fasta"
-        filter_fasta_infile(evo_record_idx, tmp_bestevo_realn, tmp_aligned_evo_records)
-        tmp_ucsc_raw_realign = "tmp/ucsc_raw_realigned.fasta"
-        profile_MSA(ucsc_raw_fpath, tmp_aligned_evo_records, tmp_ucsc_raw_realign)
-        tmp_ucsc_realign_best_ncbi = "tmp/ucscrealign_bestncbi.fasta"
-        profile_MSA(tmp_ucsc_raw_realign, best_raw_fpath, tmp_ucsc_realign_best_ncbi)
-        # Realign UCSC against prealigned evos, profile align best evo prealigned
-        tmp_bestncbi_prealigned = "tmp/best_prealigned.fasta"
-        filter_fasta_infile([bestNCBI_record_id], tmp_bestevo_realn, tmp_bestncbi_prealigned)
-        tmp_ucscrealigned_bestevorealn = "tmp/ucscrealign_bestevorealn.fasta"
-        profile_MSA(tmp_ucsc_raw_realign, tmp_bestevo_realn, tmp_ucscrealigned_bestevorealn)
-
-        # filter UCSC, align best NCBI record
-        ucsc_df = UCSC_fasta_df(ucsc_raw_fpath)
-        filt_ucsc, _ = partition_UCSC_by_clade(ucsc_df, clade='boreoeutheria')
-        tmp_boreoeuth_ucsc = "tmp/boreoeutheria_ucsc.fasta"
-        filter_fasta_infile(filt_ucsc.index, ucsc_raw_fpath, outfile_path=tmp_boreoeuth_ucsc)
-        tmp_filtucsc_bestevo = "tmp/filtucsc_bestevorealn.fasta"
-        profile_MSA(tmp_boreoeuth_ucsc, tmp_bestevo_realn, tmp_filtucsc_bestevo)
-        tmp_filtucsc_bestncbi = "tmp/filtucsc_bestncbi.fasta"
-        profile_MSA(tmp_boreoeuth_ucsc, best_raw_fpath, tmp_filtucsc_bestncbi)
-
     def test_ucsc_partitioning(self):
         from utility import fastaUtility as fautil
         from Bio import SeqIO

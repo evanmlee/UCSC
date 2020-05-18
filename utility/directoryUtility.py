@@ -147,23 +147,4 @@ def config_initialization(config_path="config/config.txt"):
     shutil.copy("config/config.txt",config_copy_path)
     return config, taxid_dict, dir_vars
 
-
-def load_ortholog_table(ortholog_fpath):
-    import pandas as pd
-    ortholog_table = pd.read_csv(ortholog_fpath,sep='\t',index_col="NCBI_gid",dtype='str')
-    return ortholog_table
-
-def ortholog_file_cleanup(ortholog_fpath):
-    from IPython.display import display
-    ortholog_table = ortholog_table = pd.read_csv(ortholog_fpath,sep='\t',index_col=0,dtype=str)
-    # display(ortholog_table)
-    print("Ortholog entries: {0}".format(len(ortholog_table)))
-    for col in ortholog_table:
-        col_dropna = ortholog_table[col].dropna()
-        valid_idx = col_dropna.str.contains("^10|^11")
-        col_valid = col_dropna.loc[valid_idx]
-        display(col_valid)
-        col_sus = col_dropna.loc[~(valid_idx)]
-        display(col_sus)
-
 config, taxid_dict, dir_vars = config_initialization()

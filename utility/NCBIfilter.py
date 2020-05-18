@@ -12,10 +12,18 @@ from utility import fastaUtility as fautil
 from query import orthologUtility as orutil
 
 def load_transcript_table(transcripts_fpath):
+    """Loads generic transcript ID indexed table into DataFrame."""
     transcript_table = pd.read_csv(transcripts_fpath,sep='\t',index_col="UCSC_transcript_id")
     return transcript_table
 
 def read_evo_relative_data():
+    """Reads closest and secondary evolutionary relative data specified in config/config.txt, returns dictionaries
+    mapping NCBI anlaysis species Taxonomy IDs to either NCBI Tax IDs or UCSC record handles of corresponding
+    evolutionary relative species in UCSC record data.
+    :return: closest_evo_taxids,closest_evo_handles,second_evo_taxids,second_evo_handles: Map NCBI species taxonomy ID
+    to either the NCBI taxonomy ID of closest or list of secondary closest evolutionary relatives, or appropriate UCSC
+    fasta record handles (genome assembly abbreviations used in record IDs).
+    """
     config, taxid_dict = directoryUtility.config, directoryUtility.taxid_dict
     closest_evo_taxids, second_evo_taxids = dict(config['TAXONOMY_CLOSEST_EVOLUTIONARY_RELATIVE']),\
                                             dict(config['TAXONOMY_SECONDARY_EVOLUTIONARY_RELATIVES'])
@@ -53,6 +61,7 @@ def evo_relative_alignment(dir_vars,taxid,ucsc_tid,gid,how='all',alt_outpath="")
         emsg = "No NCBI record data for taxid {0} present.".format(taxid)
         raise UCSCerrors.SequenceDataError(0,emsg)
     else:
+        #Secondary case for NCBI ortholog Gene ID having no associated Protein IDs (i.e. Gene ID 101721569)
         ortho_ids = [fasta.id for fasta in SeqIO.parse(ortho_fpath, 'fasta')]
         if len(ortho_ids) == 0:
             emsg = "No NCBI record data for taxid {0} present.".format(taxid)
@@ -145,6 +154,13 @@ def write_bestNCBI_record(dir_vars,taxid,ucsc_tid,NCBI_hgid,evo_record_idx,ucsc_
     return bestNCBI_record_id
 
 def length_metrics_df(lm_fpath, taxid_dict):
+    """Reads or initializes a DataFrame from lm_fpath. Columns are based on evolutionary relative data read from config
+    file.
+    :param lm_fpath: File path to length_metrics.tsv. If no file exists at path, makes new DataFrame
+    :param taxid_dict: Contains Taxonomy IDs of all NCBI species for analysis as keys.
+    :return: lm_df: DataFrame indexed on UCSC transcript IDs, contains NCBI Human Gene ID and lengths of sequences for
+    UCSC evolutionary relatives and NCBI records.
+    """
     core_labels = ["clade_mean", "clade_median", "bestncbi_mean", "bestncbi_median"]
     closest_evo_taxids = list(CLOSEST_EVO_TAXIDS.values())
     second_evo_taxids = []
@@ -156,10 +172,8 @@ def length_metrics_df(lm_fpath, taxid_dict):
     ucsc_labels = ["{0}_length".format(taxid) for taxid in ordered_ucsc_taxids]
     ncbi_labels = ["{0}_ncbi_length".format(taxid) for taxid in taxid_dict]
     lm_columns = ['NCBI_hgid']+core_labels + ucsc_labels + ncbi_labels
-
     if not os.path.exists(lm_fpath):
         lm_df = pd.DataFrame(columns=lm_columns,dtype=float)
-        # lm_df = lm_df.astype(dtype={'NCBI_hgid':int})
         lm_df['NCBI_hgid'] = lm_df['NCBI_hgid'].astype('str')
         lm_df.index.name = "UCSC_transcript_id"
     else:
@@ -209,6 +223,17 @@ def length_metrics_row(dir_vars,taxid_dict,lm_df,ordered_ucsc_taxids,ucsc_tid,nc
     return lm_df
 
 def filter_ortholog_data(force_overwrite_tid_subset=[],clade="all",alt_lm_fpath=""):
+    """Master function for carrying out allNCBI/ bestNCBI file writing. In allNCBI: writes all ortholog against closest
+    evolutionary relative alignments (or skips if no evolutionary relative data and multiple NCBI ortholog sequences).
+    In bestNCBI: writes 1) unaligned best identity record to evolutionary relative data and 2) combined ucsc
+    clade-filtered against best NCBI record profile alignment.
+    :param force_overwrite_tid_subset: array-like, if provided forces alignment file rewriting and record length
+    recalculations for UCSC transcript IDs in it
+    :param clade: Must correspond to accepted values in fastaUtility ('all','mammalia', 'boreoeutheria',
+    'euarchontoglires', 'primates').
+    :param alt_lm_fpath: If provided, reads and writes length_metrics table to alternative file path.
+    :return:
+    """
     from utility.directoryUtility import taxid_dict,dir_vars
     xref_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
     xref_table = orutil.load_NCBI_xref_table(xref_fpath)
@@ -246,18 +271,12 @@ def filter_ortholog_data(force_overwrite_tid_subset=[],clade="all",alt_lm_fpath=
             lm_df.to_csv(lm_fpath, sep='\t', float_format='%.4f')
     lm_df.to_csv(lm_fpath, sep='\t', float_format='%.4f')
 
-
+#Read evolutionary relative data from config file.
 CLOSEST_EVO_TAXIDS,CLOSEST_EVO_HANDLES,SECONDARY_EVO_TAXIDS,SECONDARY_EVO_HANDLES = read_evo_relative_data()
+
 def main():
     pd.options.display.max_columns = None
-    from utility import UCSCerrors
-
     filter_ortholog_data(clade="boreoeutheria")
-
-    # ortholog_errors_fpath = "{0}/ortholog_errors.tsv".format(dir_vars['summary_run'])
-    # check_oe, ortholog_errors_df = UCSCerrors.load_errors(ortholog_errors_fpath)
-    # ambig_errors= ortholog_errors_df.loc[ortholog_errors_df['error_code']==3,:]
-    # alt_lm_fpath = "{0}/length_metrics_allncbi_rerun.tsv".format(dir_vars['combined_run'])
 
 if __name__ == '__main__':
     main()
