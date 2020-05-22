@@ -277,6 +277,13 @@ CLOSEST_EVO_TAXIDS,CLOSEST_EVO_HANDLES,SECONDARY_EVO_TAXIDS,SECONDARY_EVO_HANDLE
 def main():
     pd.options.display.max_columns = None
     filter_ortholog_data(clade="boreoeutheria")
+    # from utility.directoryUtility import dir_vars,taxid_dict
+    # taxid = 9999
+    # ucsc_tid = "ENST00000294244.9"
+    # gid = 144097
+    # evo_record_idx = evo_relative_alignment(dir_vars, taxid, ucsc_tid, gid, how='all', alt_outpath="")
+    # print(evo_record_idx)
+    # write_bestNCBI_record(dir_vars,taxid,ucsc_tid,gid,evo_record_idx)
 
 if __name__ == '__main__':
     main()

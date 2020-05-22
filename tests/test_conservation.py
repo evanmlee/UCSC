@@ -5,6 +5,7 @@ import os
 from IPython.display import display
 from conservation import analysis_record_filter as ar_filt
 from conservation import conservation_summary as cs
+from conservation import analysis_calc as ac
 from Bio import SeqIO
 from conservation.analysis_calc import blos_df
 
@@ -148,13 +149,205 @@ class ConservationTest(unittest.TestCase):
             sub_thresh_len = filtered_records_df.loc[filtered_records_df['length'] < ncbi_len*0.8]
             self.assertTrue(len(sub_thresh_len)==0)
 
+    def test_id_record_check(self):
+        from utility.directoryUtility import taxid_dict,dir_vars
+        from utility.NCBIfilter import CLOSEST_EVO_TAXIDS,SECONDARY_EVO_TAXIDS,length_metrics_df
+        from numpy import isnan
+
+        test_taxid,test_tid = 9999,"ENST00000367772.8"
+        test_exon_ins_taxid, test_exon_ins_tid = 10181, "ENST00000602312.2"
+        test_dist_evos_taxid, test_dist_evos_tid = 9994, "ENST00000359326.9"
+        test_dist_evos_taxid, test_dist_evos_tid = 9994, "ENST00000003583.12"
+        # test_taxid,test_tid = test_exon_ins_taxid,test_exon_ins_tid
+        # test_taxid, test_tid = test_missing_records_taxid,test_missing_records_tid
+        test_taxid,test_tid = test_dist_evos_taxid, test_dist_evos_tid
+        check_taxids = [CLOSEST_EVO_TAXIDS[test_taxid]] + SECONDARY_EVO_TAXIDS[test_taxid]
+        test_comb_fpath = "{0}/combined/{1}/{2}.fasta".format(dir_vars['bestNCBI_parent'],test_taxid,test_tid)
+        lm_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
+        lm_df, ordered_ucsc_taxids = length_metrics_df(lm_fpath,taxid_dict)
+        lm_row = lm_df.loc[test_tid,:]
+        length_checks = ar_filt.id_length_check(test_comb_fpath,lm_row,check_taxids)
+        self.assertTrue(sum(length_checks.values())==5)
+
+        ###missing_records_test###
+        test_missing_records_taxid, test_missing_records_tid = 29073, "ENST00000354619.10"
+        test_taxid, test_tid = test_missing_records_taxid,test_missing_records_tid
+        check_taxids = [CLOSEST_EVO_TAXIDS[test_taxid]] + SECONDARY_EVO_TAXIDS[test_taxid]
+        test_comb_fpath = "{0}/combined/{1}/{2}.fasta".format(dir_vars['bestNCBI_parent'], test_taxid, test_tid)
+        lm_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
+        lm_df, ordered_ucsc_taxids = length_metrics_df(lm_fpath, taxid_dict)
+        lm_row = lm_df.loc[test_tid, :]
+        length_checks = ar_filt.id_length_check(test_comb_fpath, lm_row, check_taxids)
+        #Missing records check
+        self.assertTrue("9646_check" not in length_checks)
+        self.assertTrue("9708_check" in length_checks)
+        self.assertAlmostEqual(sum(length_checks.values())/len(length_checks),0.5)
+
+        #Assignment test for missing records
+        test_spec_lc_df = pd.DataFrame(columns=["clade_check","bestncbi_check","9646_check","9708_check","9713_check"])
+        test_spec_lc_df.loc[test_tid,:] = length_checks
+        self.assertFalse(test_spec_lc_df.loc[test_tid,["clade_check","bestncbi_check","9708_check","9713_check"]].isna().any())
+        self.assertTrue(isnan(test_spec_lc_df.loc[test_tid,"9646_check"]))
+
+        #bad_homology_test
+        test_taxid, test_tid = 29073, "ENST00000377627.7"
+        check_taxids = [CLOSEST_EVO_TAXIDS[test_taxid]] + SECONDARY_EVO_TAXIDS[test_taxid]
+        test_comb_fpath = "{0}/combined/{1}/{2}.fasta".format(dir_vars['bestNCBI_parent'], test_taxid, test_tid)
+        lm_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
+        lm_df, ordered_ucsc_taxids = length_metrics_df(lm_fpath, taxid_dict)
+        lm_row = lm_df.loc[test_tid, :]
+        length_checks = ar_filt.id_length_check(test_comb_fpath, lm_row, check_taxids)
+        self.assertTrue(sum(length_checks.values())==0)
+
+    def test_spec_length_check_file_load(self):
+        test_fpath = "combined_alignments/hg38AA_knownCanonical/4speciesv1/9999_length_checks.tsv"
+        lc_df = pd.read_csv(test_fpath,sep='\t',index_col=0)
+        lc_row = lc_df.loc["ENST00000368174.5",:]
+        nonna = lc_row.dropna()
+        pass_ratio = sum(nonna)/len(nonna)
+        self.assertTrue(pass_ratio == 0.8)
+
+        #ncbi_only_test
+        lc_row = lc_df.loc["ENST00000381566.6", :]
+        nonna = lc_row.dropna()
+        ncbi_only_check = (nonna['bestncbi_check'] == True and sum(nonna) == 1)
+        self.assertTrue(ncbi_only_check)
+
+        lc_row = lc_df.loc["ENST00000594199.3", :]
+        nonna = lc_row.dropna()
+        ncbi_only_check = (nonna['bestncbi_check'] == True and sum(nonna) == 1)
+        self.assertFalse(ncbi_only_check)
+
+    @unittest.skip("Speed test comparing filtered/ unfiltered input file for identity matrix loading. Faster method "
+                   "used in id_length_check")
+    def test_id_length_speed(self):
+        from utility.directoryUtility import taxid_dict, dir_vars
+        import time
+        from utility.NCBIfilter import CLOSEST_EVO_TAXIDS, SECONDARY_EVO_TAXIDS, length_metrics_df
+
+        test_taxid, test_tid = 9999, "ENST00000367772.8"
+        test_comb_fpath = "{0}/combined/{1}/{2}.fasta".format(dir_vars['bestNCBI_parent'], test_taxid, test_tid)
+        check_taxids = [CLOSEST_EVO_TAXIDS[test_taxid]] + SECONDARY_EVO_TAXIDS[test_taxid]
+        #Test speed test for filtered/ unfiltered alignment.
+        combined_fasta_fpath = test_comb_fpath
+        combined_df = fautil.load_UCSC_NCBI_df(combined_fasta_fpath, taxid_dict)
+        ucsc_mask = combined_df.index.str.contains("ENST")
+        ucsc_df, ncbi_df = combined_df.loc[ucsc_mask], combined_df.loc[~ucsc_mask]
+
+        filtered_ids = ucsc_df.loc[ucsc_df['NCBI_taxid'].isin(check_taxids)].index
+        filtered_ids.append(ncbi_df.index)
+
+        print("==Unfiltered ID DM calcs.==")
+        for i in range(10):
+            t0 = time.process_time()
+            id_dm, align_srs = fautil.construct_id_dm(combined_df.index, combined_fasta_fpath, filtered=True,
+                                                      aligned=True)
+            assert ((align_srs.index == combined_df.index).all())
+            t1 = time.process_time()
+            print(t1 - t0)
+        print("==Filtered ID DM calcs.==")
+        dm_pos = [align_srs.index.get_loc(record_id) for record_id in filtered_ids]
+        filtered_dm = id_dm[dm_pos, :]
+        filtered_dm = filtered_dm[:, dm_pos]
+        print(filtered_dm)
+        for i in range(10):
+            t0 = time.process_time()
+            filtered_ids = ucsc_df.loc[ucsc_df['NCBI_taxid'].isin(check_taxids)].index
+            filtered_ids.append(ncbi_df.index)
+            tmp_fpath = "tmp/lm_checks.fasta"
+            fautil.filter_fasta_infile(filtered_ids, combined_fasta_fpath, tmp_fpath)
+            id_dm, align_srs = fautil.construct_id_dm(filtered_ids, tmp_fpath, filtered=True, aligned=True)
+            assert ((align_srs.index == filtered_ids).all())
+            t1 = time.process_time()
+            print(t1 - t0)
+        print(id_dm)
+
+    def test_lc_calcs(self):
+        from utility.directoryUtility import taxid_dict,dir_vars
+        lm_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
+        ar_filt.length_metric_checks(lm_fpath,pass_how='most')
+        lc_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
+        lc_df = pd.read_csv(lc_fpath,sep='\t',index_col=0)
+        lc_counts = lc_df.count()
+        lc_passed_counts = lc_df.sum()
+        all_passed = [tid for tid in lc_df.index if lc_df.loc[tid,:].sum() == len(lc_df.columns)]
+        print("Number of transcript IDs for which all orthologs passed: {0}".format(len(all_passed)))
+
+        #Test length checks for records with no comparable UCSC data
+        all_fail_tids = ["ENST00000638261.1","ENST00000643389.2","ENST00000643310.2","ENST00000639909.2","ENST00000640602.1"]
+        for tid in all_fail_tids:
+            tid_row = lc_df.loc[tid]
+            print(tid_row)
+            # self.assertTrue(sum(tid_row) == 1)
+
+    def test_exon_diff_splitting(self):
+        from utility.directoryUtility import taxid_dict,dir_vars
+        bestncbi_parent = dir_vars['bestNCBI_parent']
+        #Test tail insertion
+        test_fpath = "{0}/combined/9994/ENST00000371274.8.fasta".format(bestncbi_parent)
+        test_records_fpath = "tmp/ENST00000371274.8_records.tsv"
+        records_df, filtered_outpath = ar_filt.filter_analysis_subset(test_fpath,test_records_fpath)
+        ncbi_record_id = records_df.loc[~records_df.index.str.contains("ENST"),:].index[0]
+        align_df = fautil.align_fasta_to_df(filtered_outpath, ucsc_flag=True)
+        unique_thresh = 1
+        uniques = ac.find_uniques(align_df,unique_thresh,ncbi_record_id)
+        indel_pos = ac.indel_postiions(uniques,ncbi_record_id,unique_thresh)
+        self.assertTrue(346 in uniques.columns)
+        self.assertTrue(346 not in indel_pos.columns)
+        # display(indel_pos)
+        exon_diffs = ac.id_exon_diffs(indel_pos)
+        self.assertTrue(len(exon_diffs)==197)
+        self.assertTrue(exon_diffs[-1] == 569)
+
+        test_fpath = "{0}/combined/9994/ENST00000003583.12.fasta".format(bestncbi_parent)
+        test_records_fpath = "tmp/ENST00000003583.12_records.tsv"
+        records_df, filtered_outpath = ar_filt.filter_analysis_subset(test_fpath, test_records_fpath)
+        ncbi_record_id = records_df.loc[~records_df.index.str.contains("ENST"), :].index[0]
+        align_df = fautil.align_fasta_to_df(filtered_outpath, ucsc_flag=True)
+        unique_thresh = 1
+        uniques = ac.find_uniques(align_df, unique_thresh, ncbi_record_id)
+        indel_pos = ac.indel_postiions(uniques, ncbi_record_id, unique_thresh)
+        exon_diffs = ac.id_exon_diffs(indel_pos)
+        self.assertTrue(25 in exon_diffs)
+        self.assertTrue(39 in exon_diffs)
+        self.assertTrue(26 not in exon_diffs)
+        self.assertTrue(38 not in exon_diffs)
+
+    def test_filter_uniques(self):
+        from utility.directoryUtility import taxid_dict, dir_vars
+        bestncbi_parent = dir_vars['bestNCBI_parent']
+        # Test tail insertion
+        test_fpath = "{0}/combined/9994/ENST00000371274.8.fasta".format(bestncbi_parent)
+        test_records_fpath = "tmp/ENST00000371274.8_records.tsv"
+        records_df, filtered_outpath = ar_filt.filter_analysis_subset(test_fpath, test_records_fpath)
+        ncbi_record_id = records_df.loc[~records_df.index.str.contains("ENST"), :].index[0]
+        align_df = fautil.align_fasta_to_df(filtered_outpath, ucsc_flag=True)
+        unique_thresh = 1
+        uniques = ac.find_uniques(align_df, unique_thresh, ncbi_record_id)
+        filt_uniques, exon_diffs = ac.filter_exon_diffs(uniques,ncbi_record_id,unique_thresh)
+        self.assertTrue(115 in filt_uniques.columns)
+        self.assertTrue(205 in filt_uniques.columns)
+        self.assertTrue(373 not in filt_uniques.columns)
+        # with pd.option_context('display.max_columns',None):
+        #     print("Filtered unique positions")
+        #     display(filt_uniques)
+        # print("Exon differences")
+        # display(exon_diffs)
+
+
     def test_gene_summary(self):
 
-        test_combined_fpath = "tests/test_data/combined/ENST00000002596.6.fasta"
-        test_out_records_fpath = "tests/tmp/ENST00000002596.6_9999records_gstest.tsv"
-        test_out_summary_fpath = "tests/tmp/ENST00000002596.6_9999summary_gstest.tsv"
+        # test_combined_fpath = "tests/test_data/combined/ENST00000002596.6.fasta"
+
+        test_out_records_fpath = "tests/tmp/ENST00000371274.8_9994records.tsv"
+        # test_out_summary_fpath = "tests/tmp/ENST00000002596.6_9999summary_gstest.tsv"
+        test_taxid = 9994
+        tid = "ENST00000371274.8"
+        test_combined_fpath = "tests/test_data/combined/{0}/{1}.fasta".format(test_taxid,tid)
+        tid_summary_dict = "tests/tmp/{0}".format(tid)
+        directoryUtility.create_directory(tid_summary_dict)
         combined_fasta_df = fautil.load_UCSC_NCBI_df(test_combined_fpath, TEST_ANALYSIS_DICT)
-        ncbi_taxid = 9999
+        ncbi_taxid = test_taxid
         ncbi_partition = (combined_fasta_df['NCBI_taxid'] == ncbi_taxid) & \
                          ~(combined_fasta_df.index.str.contains("ENST"))
         ncbi_idx = combined_fasta_df.loc[ncbi_partition, :].index
@@ -167,70 +360,11 @@ class ConservationTest(unittest.TestCase):
                                                                        taxid_dict=TEST_ANALYSIS_DICT, drop_redundant=True,
                                                                        drop_ncbi_from_ucsc=True)
         align_df = fautil.align_fasta_to_df(filtered_aln_path,ucsc_flag=True)
-        summary_df = cs.gene_summary_table(align_df, ncbi_idx, blos_df,unique_thresh=1,
-                                        summary_table_outpath=test_out_summary_fpath,
+        summary_df = cs.gene_summary_table(align_df, ncbi_idx, blos_df,tid_summary_dict,tid,unique_thresh=1,
                                         use_jsd_gap_penalty=True)
-        self.assertTrue(len(summary_df.loc[summary_df['NCBI Variant Count']==1])==len(summary_df))
-        self.assertTrue(227 in summary_df.index)
-        self.assertTrue(summary_df['Test-Outgroup BLOSUM62'].count() == 1)
-
-
-
-    @unittest.skip("Median and mean calculation checks are correct")
-    def test_suppl_length_metrics(self):
-        import io
-        import contextlib
-        import numpy as np
-        best_NCBI_parent = "combined_alignments/hg38AA_knownCanonical/4species1/bestNCBI"
-        test_dir_vars = {'bestNCBI_parent':best_NCBI_parent}
-        lm_fpath = "combined_alignments/hg38AA_knownCanonical/4species1/length_metrics.tsv"
-        suppl_fpath = "combined_alignments/hg38AA_knownCanonical/4species1/length_metrics_suppl.tsv"
-        out_buf = io.StringIO()
-        with contextlib.redirect_stdout(out_buf):
-            force_overwrite = False
-            skip_ovewrwrite = os.path.exists(suppl_fpath) and not force_overwrite
-            suppl_lm_fpath = ar_filt.length_metric_supplement(TEST_ANALYSIS_DICT,test_dir_vars,lm_fpath,
-                                                          force_overwrite=force_overwrite,suppl_lm_df_fpath=suppl_fpath)
-            if skip_ovewrwrite:
-                check_output_msg = "Run with force_overwrite=True if recalculation desired."
-                self.assertIn(check_output_msg,out_buf.getvalue())
-                print("Successfully pre-checked file")
-            else:
-                self.assertTrue(os.path.exists(suppl_lm_fpath))
-
-        suppl_lm_df = pd.read_csv(suppl_lm_fpath, sep='\t', index_col=0)
-        ncbi_col_labels = ['9999_length', '10181_length', '29073_length', '9994_length']
-
-        row_gen = suppl_lm_df.iterrows()
-        for idx, row in row_gen:
-            ncbi_cols = row[ncbi_col_labels]
-            precalc_bn_mean, precalc_bn_med = row['bestncbi_mean'], row['bestncbi_median']
-            recalc_bn_med = np.nanmedian(ncbi_cols)
-            self.assertTrue(recalc_bn_med == precalc_bn_med)
-            self.assertTrue(precalc_bn_mean == precalc_bn_mean)
-
-    def test_lc_calcs(self):
-        best_NCBI_parent = "combined_alignments/hg38AA_knownCanonical/4species1/bestNCBI"
-        combined_run = "combined_alignments/hg38AA_knownCanonical/4species1"
-        test_dir_vars = {'bestNCBI_parent': best_NCBI_parent,
-                         'combined_run':combined_run}
-        lm_fpath = "{0}/length_metrics.tsv".format(test_dir_vars['combined_run'])
-        ar_filt.length_metric_checks(TEST_ANALYSIS_DICT,test_dir_vars,lm_fpath,how='most',overwrite=False)
-        lc_fpath = "{0}/length_checks.tsv".format(test_dir_vars['combined_run'])
-        lc_df = pd.read_csv(lc_fpath,sep='\t',index_col=0)
-        lc_counts = lc_df.count()
-        lc_passed_counts = lc_df.sum()
-        all_passed = [tid for tid in lc_df.index if lc_df.loc[tid,:].sum() == len(lc_df.columns)]
-
-        suppl_lm_fpath = "{0}/length_metrics_suppl.tsv".format(test_dir_vars['combined_run'])
-        suppl_lm_df = pd.read_csv(suppl_lm_fpath,sep='\t',index_col=0)
-
-        #Test length checks for records with no comparable UCSC data
-        all_fail_tids = ["ENST00000638261.1","ENST00000643389.2","ENST00000643310.2","ENST00000639909.2","ENST00000640602.1"]
-        for tid in all_fail_tids:
-            tid_row = lc_df.loc[tid]
-            self.assertTrue(sum(tid_row) == 0)
-
+        # self.assertTrue(len(summary_df.loc[summary_df['NCBI Variant Count']==1])==len(summary_df))
+        # self.assertTrue(227 in summary_df.index)
+        # self.assertTrue(summary_df['Test-Outgroup BLOSUM62'].count() == 1)
 
     def test_overall_summary(self):
         from utility.directoryUtility import taxid_dict,dir_vars,empty_directory

@@ -47,11 +47,76 @@ def gen_blos_df():
     sim_matrix = blos_df.values
     return aas, blosum62_bg, blos_df, sim_matrix
 
-def find_uniques(align_df, sub_freq_threshold, test_species_idx,display_uniques=False):
+def indel_postiions(uniques,test_idx,unique_thresh):
+    n_seq = len(uniques)
+    indel_pos = []
+    for pos in uniques:
+        col = uniques.loc[:,pos]
+        vc_metrics = variant_counts(col,test_idx)
+        if vc_metrics['test_variant'] == '-' or vc_metrics['gap_fraction'] >= (1-unique_thresh/n_seq):
+            indel_pos.append(pos)
+    indel_cols = uniques.loc[:,indel_pos]
+    return indel_cols
+
+def id_exon_diffs(indel_cols, INDEL_THRESH=5):
+    """Given a DataFrame of indel positions from align_df, identify exon_diffs as continuous stretches of at least
+    INDEL_THRESH positions of adjacent indel positions.
+
+    :param indel_cols: DataFrame of align_df columns corresponding to unique positions where test variant is '-' or
+    outgroup variant is unviersally '-'
+    :param INDEL_THRESH: int, threshold length for continuous stretches of indel positions to be returned.
+    :return: exon_diffs, positions corresponding to continuous indel stretches as defined above.
+    """
+    # Iterate over all gap positions:
+    # If current position already included in gap stretch positions, continue
+    # Check if i+4 position corresponds to 5 sequential gaps starting at i
+    # if so: continue checking sequential positions until non-sequential gap.
+    # if not: move on to i+1 gap position
+    #Side not i am so sorry if you are trying to read this function.
+    indel_positions = indel_cols.columns
+    exon_diffs = []
+    for iter_idx in range(len(indel_positions) - 4):
+        curr_gap = indel_positions[iter_idx]
+        check_gap = indel_positions[iter_idx + 4]
+        if curr_gap in exon_diffs:
+            continue
+        elif check_gap == curr_gap + 4:
+            if iter_idx + 5 == len(indel_positions):
+                prev_gap = check_gap
+            else:
+                for check_idx in range(iter_idx + 5, len(indel_positions)):
+                    prev_gap = check_gap
+                    check_gap = indel_positions[check_idx]
+                    if check_gap == prev_gap + 1:
+                        if check_idx == len(indel_positions) - 1:
+                            prev_gap = check_gap
+                        continue
+                    else:
+                        break
+            for gap in range(curr_gap, prev_gap + 1):
+                exon_diffs.append(gap)
+        else:
+            continue
+    return exon_diffs
+
+def filter_exon_diffs(uniques,test_species_idx,unique_thresh):
+    """For a series of unique positions in align_df, split into exon differences (insertion or deletion stretches >=5
+    aa) and unique substitutions (everything else).
+    :param uniques:
+    :param test_species_idx:
+    :return:
+    """
+    indel_cols = indel_postiions(uniques,test_species_idx,unique_thresh)
+    exon_diff_pos = id_exon_diffs(indel_cols)
+    filt_uniques, exon_diffs = uniques.drop(columns=exon_diff_pos),uniques.loc[:,exon_diff_pos ]
+    return filt_uniques, exon_diffs
+
+
+def find_uniques(align_df, sub_freq_thresh, test_species_idx):
     """Identifies unnique positions from align_df with frequency <= sub_fre_threshold
 
     :param align_df: DataFrame of alignment characters. Columns: 1-indexed alignment positions, Index: record ids
-    :param (int) sub_freq_threshold: max allowed number of instances of a substitution for it to be considered unique
+    :param (int) sub_freq_thresh: max allowed number of instances of a substitution for it to be considered unique
     :param test_species_idx: record_id for test_species record in align_df for which uniques will be identified
     :param (boolean) display_uniques: If true, displays table of unique residues identified
     :return:
@@ -62,11 +127,8 @@ def find_uniques(align_df, sub_freq_threshold, test_species_idx,display_uniques=
         sub_counts = col.value_counts()
         test_var = col[test_species_idx][0]
         test_vc = sub_counts[test_var]
-        if test_vc <= sub_freq_threshold and test_var!='X':
+        if test_vc <= sub_freq_thresh and test_var in UNAMBIG_CHARS:
             uniques.loc[:,pos] = col
-    if display_uniques:
-        print("Threshold Number of Sequences: "+str(int(sub_freq_threshold)))#/len(ordered)))
-        display(uniques)
     return uniques
 
 def gap_fraction(col):
@@ -232,3 +294,4 @@ def pairwise_outgroup_blosum(col,test_spec_idx,blos_df):
 aas, blosum62_bg, blos_df, sim_matrix = gen_blos_df()
 
 NON_GAP_AAS = ['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V']
+UNAMBIG_CHARS = ['A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I', 'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V','-']

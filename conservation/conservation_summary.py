@@ -8,9 +8,24 @@ from utility import UCSCerrors
 from utility import fastaUtility as fasta
 
 
+def write_exon_diffs_table(align_df,exon_diffs_cols,test_idx,exon_diffs_fpath):
+    col_labels = ['NCBI Species Position','NCBI Variant','NCBI Variant Count',
+                          'Outgroup Variant', 'Outgroup Variant Count', 'Analysis Sequences', 'Gap Fraction']
+    summary_statistics = pd.DataFrame(columns=col_labels)
+    n_seq = len(exon_diffs_cols)
+    for pos in exon_diffs_cols:
+        ed_col = exon_diffs_cols.loc[:,pos]
+        vc = ac.variant_counts(ed_col,test_idx)
+        native_pos = ac.align_pos_to_native_pos(align_df,test_idx,pos)
+        gf = ac.gap_fraction(ed_col)
+        row_vals = [native_pos,vc['test_variant'],vc['test_variant_count'],vc['outgroup_variant'],
+                    vc['outgroup_variant_count'],n_seq,gf]
+        row = dict(zip(col_labels,row_vals))
+        summary_statistics.loc[pos,:] = row
+    summary_statistics.to_csv(exon_diffs_fpath,sep='\t',float_format='%.4f')
 
-def gene_summary_table(align_df, test_idx,blos_df, unique_thresh=1,display_summary=False,
-                       summary_table_outpath="", use_jsd_gap_penalty=True):
+def gene_summary_table(align_df, test_idx,blos_df, tid_summary_dir,tid,unique_thresh=1,
+                       display_summary=False,write_tables=True, use_jsd_gap_penalty=True):
     """Given an align_df representing OrthoDB and NCBI record multiple sequence alignment, calculates JSD, BLOSUM,
     gap and variant metrics for the OrthoDB records only.
 
@@ -28,8 +43,12 @@ def gene_summary_table(align_df, test_idx,blos_df, unique_thresh=1,display_summa
     #If unique thresh given as a ratio, convert to maximum number of instances to be considered unique. Else use as is.
     if type(unique_thresh) == float and unique_thresh < 1:
         unique_thresh = max(int(len(align_df) * unique_thresh), 1)
-    uniques = ac.find_uniques(align_df,unique_thresh,test_idx)
-    unique_pos = uniques.columns
+    uniques  = ac.find_uniques(align_df,unique_thresh,test_idx)
+    filt_uniques, exon_diffs = ac.filter_exon_diffs(uniques,test_idx,unique_thresh)
+    if write_tables and len(exon_diffs.columns) > 0:
+        exon_diffs_fpath = "{0}/{1}_exondiffs.tsv".format(tid_summary_dir,tid)
+        write_exon_diffs_table(align_df,exon_diffs,test_idx,exon_diffs_fpath)
+    unique_pos = filt_uniques.columns
     if len(unique_pos) == 0:
         raise UCSCerrors.SequenceAnalysisError(0,"No species unique substitutions under occurence " 
                                       "threshold {0} instances".format(unique_thresh))
@@ -59,7 +78,8 @@ def gene_summary_table(align_df, test_idx,blos_df, unique_thresh=1,display_summa
     if display_summary:
         print("Test Species Index: {0}".format(test_idx))
         display(summary_df)
-    if summary_table_outpath:
+    if write_tables:
+        summary_table_outpath = "{0}/{1}_summary.tsv".format(tid_summary_dir,tid)
         summary_df.to_csv(summary_table_outpath,sep='\t',float_format='%.5f')
     return summary_df
 
@@ -67,7 +87,7 @@ def load_summary_table(summary_fpath):
     summary_df = pd.read_csv(summary_fpath,sep='\t',index_col=0)
     return summary_df
 
-def overall_summary_table(dir_vars, xref_table, taxid_dict,
+def overall_summary_table(xref_table,
                           tid_subset=[], UCSC_tax_subset=[],
                           use_jsd_gap_penalty=True,force_recalc=False,
                           modified_outpath="",length_checks_fpath="",skip_overall=True):
@@ -94,6 +114,7 @@ def overall_summary_table(dir_vars, xref_table, taxid_dict,
     from utility.UCSCerrors import load_errors, write_errors, print_errors
     from utility import directoryUtility as dirutil
     from conservation.analysis_calc import blos_df
+    taxid_dict,dir_vars = dirutil.taxid_dict, dirutil.dir_vars
     summary_run_dir,bestNCBI_dir= dir_vars['summary_run'],dir_vars['bestNCBI_parent']
     errors_fpath = "{0}/errors.tsv".format(summary_run_dir)
     check_qes, query_error_df = load_errors(errors_fpath,error_type="NCBIQueryError")
@@ -134,7 +155,7 @@ def overall_summary_table(dir_vars, xref_table, taxid_dict,
                 tid_subdir = "{0}/{1}".format(taxid_parent_dir,tid)
             out_summary_fpath = "{0}/{1}_summary.tsv".format(tid_subdir, tid)
             out_records_fpath = "{0}/{1}_records.tsv".format(tid_subdir, tid)
-            combined_fasta_fpath = "{0}/combined/{1}.fasta".format(bestNCBI_dir, tid)
+            combined_fasta_fpath = "{0}/combined/{1}/{2}.fasta".format(bestNCBI_dir,ncbi_taxid,tid)
 
             if not os.path.exists(out_summary_fpath) or force_recalc:
                 if check_qes and tid in query_error_df['tid'].unique():
@@ -148,11 +169,13 @@ def overall_summary_table(dir_vars, xref_table, taxid_dict,
                         and (length_checks and lc_col[tid]==True):
                     combined_fasta_df = fasta.load_UCSC_NCBI_df(combined_fasta_fpath,taxid_dict)
                     # Default behavior: Drop other NCBI records when calculating unique substitutions for individual
-                    # NCBI species
-                    ucsc_partititon = (combined_fasta_df['NCBI_taxid'].isin(UCSC_tax_subset)) & \
-                                        (combined_fasta_df.index.str.contains("ENST"))
-                    ncbi_partition = (combined_fasta_df['NCBI_taxid']==ncbi_taxid) & \
-                                     ~(combined_fasta_df.index.str.contains("ENST"))
+                    # NCBI species. If UCSC_tax_subset is provided, filter UCSC raw data.
+                    ucsc_partititon = (combined_fasta_df.index.str.contains("ENST"))
+                    if len(UCSC_tax_subset) > 0:
+                        ucsc_partititon = ucsc_partititon & (combined_fasta_df['NCBI_taxid'].isin(UCSC_tax_subset))
+                    # ncbi_partition = (combined_fasta_df['NCBI_taxid']==ncbi_taxid) & \
+                    #                  ~(combined_fasta_df.index.str.contains("ENST"))
+                    ncbi_partition = ~(combined_fasta_df.index.str.contains("ENST"))
                     ucsc_analysis_subset = combined_fasta_df.loc[ucsc_partititon].index
                     ncbi_idx = combined_fasta_df.loc[ncbi_partition,:].index
                     #Filter analysis subset. Drop redundant UCSC data (ie UCSC data representing species in NCBI
@@ -164,8 +187,7 @@ def overall_summary_table(dir_vars, xref_table, taxid_dict,
                                                                 taxid_dict=taxid_dict,drop_redundant=True,
                                                                       drop_ncbi_from_ucsc=True)
                         align_df = fasta.align_fasta_to_df(filtered_aln_path,ucsc_flag=True)
-                        summary_df = gene_summary_table(align_df,ncbi_idx,blos_df,
-                                                    summary_table_outpath=out_summary_fpath,
+                        summary_df = gene_summary_table(align_df,ncbi_idx,blos_df,tid_subdir,tid,write_tables=True,
                                                         use_jsd_gap_penalty=use_jsd_gap_penalty)
                     except UCSCerrors.SequenceAnalysisError as sae:
                         dirutil.remove_thing(tid_subdir)
@@ -198,5 +220,17 @@ def overall_summary_table(dir_vars, xref_table, taxid_dict,
             overall_df.loc[:,'JSD US Z-Score'] = us_jsd
             overall_df.loc[:,'Test-Outgroup BLOSUM US Z-Score'] = us_blos
             overall_df.to_csv(overall_summary_fpath, sep='\t', float_format='%.5f')
+
+
+def main():
+    from utility.directoryUtility import taxid_dict, dir_vars
+    from query import orthologUtility as orutil
+    xref_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
+    xref_df = orutil.load_NCBI_xref_table(xref_fpath)
+    length_checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
+    overall_summary_table(xref_df, length_checks_fpath=length_checks_fpath)
+
+if __name__ == "__main__":
+    main()
 
 

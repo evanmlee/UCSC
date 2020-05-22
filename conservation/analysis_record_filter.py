@@ -1,10 +1,15 @@
 import pandas as pd
 import numpy as np
 import os
-from IPython.display import display
-from utility import fastaUtility as fastautil, UCSCerrors
-
 import warnings
+from IPython.display import display
+
+from utility import fastaUtility as fautil, UCSCerrors
+from utility import NCBIfilter as filt
+from utility.directoryUtility import taxid_dict,dir_vars
+from utility.NCBIfilter import CLOSEST_EVO_TAXIDS, SECONDARY_EVO_TAXIDS
+
+
 
 def drop_NCBI_species_from_UCSC_records(combined_records_df,ncbi_idx,analysis_taxid_dict):
     """Drops UCSC record data for any species tax_ids represented in analysis_taxid_dict.
@@ -40,31 +45,45 @@ def drop_redundant_UCSC_records(combined_records_df,ncbi_idx):
     filtered = filtered_ucsc.append(ncbi_df)
     return filtered
 
-def drop_incomplete_records(combined_records_df, ncbi_idx,length_thresh=0.8, how='ncbi'):
+def drop_incomplete_records(combined_records_df, ncbi_idx,length_thresh=0.7, how='ncbi'):
     """Applies a length filter to combined_records_df and drops UCSC records which have length less than accepted record
     lengths multiplied by length_thresh.
 
     :param combined_records_df: DataFrame containing record data from UCSC/NCBI. 
-    :param ncbi_idx: Index of NCBI records in combined_records_df 
+    :param ncbi_idx: Index of NCBI records in combined_records_df. Assumed to only have one record.
     :param (float) length_thresh: Should be between 0 and 1.
     :param how: 'ncbi': Uses records in NCBI idx as accepted records to set length threshold
+                'nonzero_ucsc': Uses non-zero length UCSC records to determine median for length threshold
+                'nonzero_evo': Uses non-zero evolutionary relative. If none, auto defaults to ncbi record length
     :return:
     """
-    accepted_how_values = ['ncbi']
+    accepted_how_values = ['ncbi','nonzero_ucsc','nonzero_evo']
     ncbi_partition = (combined_records_df.index.isin(ncbi_idx)) & ~(combined_records_df.index.str.contains("ENST"))
     ucsc_df, ncbi_df = combined_records_df.loc[~ncbi_partition, :], combined_records_df.loc[ncbi_partition, :]
     if how == 'ncbi':
         accepted_records = ncbi_df.index
+    elif how == 'nonzero_ucsc':
+        non_zero_ucsc = ucsc_df.loc[ucsc_df['length'] > 0, :]
+        accepted_records = non_zero_ucsc.index
+    elif how == 'nonzero_evo':
+        ncbi_taxid = ncbi_df["NCBI_taxid"].iloc[0]
+        evo_taxids = [CLOSEST_EVO_TAXIDS[ncbi_taxid]] + SECONDARY_EVO_TAXIDS[ncbi_taxid]
+        evo_ucsc = ucsc_df.loc[ucsc_df['NCBI_taxid'].isin(evo_taxids),:]
+        nonzero_evo = evo_ucsc.loc[evo_ucsc['length']> 0,:]
+        if len(nonzero_evo) > 0:
+            accepted_records = nonzero_evo.index
+        else:
+            accepted_records = ncbi_df.index
     else:
         raise ValueError("how must use values in accepted values: {0}".format((accepted_how_values)))
-    accepted_mean_len = np.mean(combined_records_df.loc[accepted_records,'length'])
-    cutoff_length = accepted_mean_len*length_thresh
+    accepted_med_len = np.median(combined_records_df.loc[accepted_records,'length'])
+    cutoff_length = accepted_med_len*length_thresh
     filtered_ucsc_df = ucsc_df.loc[ucsc_df['length']>=cutoff_length,:]
     filtered = filtered_ucsc_df.append(ncbi_df)
     return filtered
     
 def filter_analysis_subset(combined_fasta,records_tsv_fpath,UCSC_analysis_subset=[],NCBI_record_subset=[],
-                           filtered_outpath="tmp/filtered_analysis_set.fasta",taxid_dict={},
+                           filtered_outpath="tmp/filtered_analysis_set.fasta",taxid_dict=taxid_dict,
                            drop_redundant=True,drop_ncbi_from_ucsc=True,drop_incomplete=True):
     """Given subsets of UCSC and NCBI records to include in conservation_analysis, writes filtered sequence data to
     filtered_outpath and returns a DataFrame with filtered record information and the path to the sequence file.
@@ -88,15 +107,16 @@ def filter_analysis_subset(combined_fasta,records_tsv_fpath,UCSC_analysis_subset
     :return: filtered_outpath: Outpath to which filtered records were written
     """
 
-    records_df = fastautil.load_UCSC_NCBI_df(combined_fasta,ncbi_taxid_dict=taxid_dict,
+    records_df = fautil.load_UCSC_NCBI_df(combined_fasta,ncbi_taxid_dict=taxid_dict,
                                          UCSC_subset=UCSC_analysis_subset,NCBI_subset=NCBI_record_subset)
+    ncbi_idx = records_df.loc[~records_df.index.str.contains("ENST"),:].index
     if drop_redundant:
-        records_df = drop_redundant_UCSC_records(records_df,ncbi_idx=NCBI_record_subset)
+        records_df = drop_redundant_UCSC_records(records_df,ncbi_idx)
     if drop_ncbi_from_ucsc:
-        records_df = drop_NCBI_species_from_UCSC_records(records_df,NCBI_record_subset,taxid_dict)
+        records_df = drop_NCBI_species_from_UCSC_records(records_df,ncbi_idx,taxid_dict)
     if drop_incomplete:
-        records_df = drop_incomplete_records(records_df,ncbi_idx=NCBI_record_subset)
-    if len(records_df) == len(NCBI_record_subset) or len(records_df) == 1:
+        records_df = drop_incomplete_records(records_df,ncbi_idx,how='nonzero_ucsc')
+    if len(records_df) == len(ncbi_idx) or len(records_df) == 1:
         emsg = "{0}".format("Analysis records filtering resulted in empty outgroup set.")
         raise UCSCerrors.SequenceAnalysisError(0,emsg)
     elif len(records_df.drop(index=NCBI_record_subset)) < 5:
@@ -104,85 +124,100 @@ def filter_analysis_subset(combined_fasta,records_tsv_fpath,UCSC_analysis_subset
         warnings.warn(wmsg,RuntimeWarning)
     records_df.drop(columns=['sequence'],inplace=True)
     records_df.to_csv(records_tsv_fpath,sep='\t')
-    fastautil.filter_fasta_infile(records_df.index,combined_fasta,outfile_path=filtered_outpath)
+    fautil.filter_fasta_infile(records_df.index,combined_fasta,outfile_path=filtered_outpath)
     return records_df, filtered_outpath
 
-def length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath,force_overwrite=False,
-                             suppl_lm_df_fpath=""):
-    """Adds data to length_metrics table corresponding to record lengths for species in UCSC_taxids and NCBI_taxids.
-    Writes updated table to suppl_lm_df_fpath.
+def id_length_check(combined_fasta_fpath,lm_row,check_taxids,len_tol=0.05,min_id_tol=0.1,max_id_tol=0.3):
+    """For a given species represented by taxid, runs length - identity checks for record validity and returns a dict
+    mapping check labels to True/ False values.
 
-    :param taxid_dict: Maps NCBI taxids to species names for species in NCBI analysis set
-    :param dir_vars: Contains key 'bestNCBI_parent' and value corresponding to path to bestNCBI directory
-    :param length_metrics_fpath: pre-existing length-metrics table file path
-    :param force_overwrite: If true, will overwrite file at suppl_lm_df_fpath even if it exists
-    :param suppl_lm_df_fpath: If not provided, defaults to length_metrics_suppl.tsv in same directory as
-    length_metrics_fpath
-    :return: suppl_lm_df_fpath: File path to supplemented length metrics table
+    Length alone iscompared to the clade median and bestncbi median present in lm_row. For each species taxid in
+    check_taxids, checks that either length of ncbi record is within len_tol (5%) of check_taxid species length. If
+    this is not true, compares record identity against the check_taxid species. A correction is made for the length
+    discrepancy between the ucsc and ncbi records and if the corrected identity is below id_tol, then the check will
+    pass.
+    Any record for check_taxids species with a length of 0 (i.e. no sequence data) will not compute a boolean
+    check_value and should not count toward the total number of record checks (see use in length_metrics_checks).
+    :param combined_fasta_fpath: fasta path to bestNCBI/combined alignment (single best NCBI ortholog record against
+    raw UCSC clade filtered data).
+    :param lm_row: length_metrics.tsv equivalent DataFrame indexed on transcript IDs. See utility/NCBIfilter.py
+    :param check_taxids: Collection of NCBI taxonomy IDs corresponding to the correct NCBI species from combined_fasta
+    for which length/ identity checks will be computed.
+    :param len_tol: Tolerance for difference in record length. For any record which length corrected difference <=
+    tolerance, corresponding check will be True
+    :param id_tol: Tolerance for length corrected identity. If a record has a length difference over len_tol but
+    a length corrected identity value below id_tol, corresponding check will be True
+    :return: spec_checks: Dict, maps check labels (ie 'clade_check', '43179_check') to True/ False values. Records
+    checks for which no ucsc_record is present (length is 0) will not be in spec_checks and will be ignored for the sake
+    of checking overall check pass ratio.
     """
-    from IPython.display import display
+    combined_df = fautil.load_UCSC_NCBI_df(combined_fasta_fpath,taxid_dict)
+    ucsc_mask = combined_df.index.str.contains("ENST")
+    ucsc_df,ncbi_df = combined_df.loc[ucsc_mask],combined_df.loc[~ucsc_mask]
 
-    if not suppl_lm_df_fpath:
-        suppl_lm_df_fpath = length_metrics_fpath[:-4]+"_suppl.tsv"
-    bestNCBI_dir = dir_vars['bestNCBI_parent']
-    combined_dir = "{0}/combined".format(bestNCBI_dir)
-    UCSC_taxids = [9606,10090,43179,10181]
-    UCSC_cols = ['9606_length','10090_length','43179_length','10181_UCSC_length']
-    NCBI_taxids = [9999,10181,29073,9994]
-    NCBI_cols = ['9999_length','10181_length','29073_length','9994_length']
-    if os.path.exists(suppl_lm_df_fpath) and not force_overwrite:
-        print("File already exists at supplemented length metrics path: {0}".format(suppl_lm_df_fpath))
-        print("Run with force_overwrite=True if recalculation desired.")
-        return suppl_lm_df_fpath
-    elif os.path.exists(suppl_lm_df_fpath):
-        lm_df = pd.read_csv(length_metrics_fpath, sep='\t', index_col=0)
-        suppl_lm_df = pd.read_csv(suppl_lm_df_fpath, sep='\t', index_col=0)
-        suppl_cols = [col for col in suppl_lm_df.columns if col not in lm_df.columns]
-        for col in suppl_cols:
-            lm_df.loc[suppl_lm_df.index,col] = suppl_lm_df[col]
-    else:
-        lm_df = pd.read_csv(length_metrics_fpath, sep='\t', index_col=0)
-    for tid,row in lm_df.iterrows():
-        if tid in lm_df.index and (UCSC_cols[0] in lm_df.columns and not np.isnan(row[UCSC_cols[0]])) \
-                and (NCBI_cols[0] in lm_df.columns and not np.isnan(row[NCBI_cols[0]])):
+    ncbi_len = ncbi_df.loc[:,"length"][0]
+    #Check clade median and best_NCBI_median
+    clade_med, bestncbi_med = lm_row['clade_median'],lm_row['bestncbi_median']
+    clade_check= (clade_med > 0 and np.abs((clade_med-ncbi_len)/clade_med)<=len_tol)
+    bestncbi_check = np.abs((bestncbi_med-ncbi_len)/bestncbi_med)<=len_tol
+    spec_checks = {"clade_check":clade_check,"bestncbi_check":bestncbi_check}
+    precalc_id_dm = False
+
+    for check_taxid in check_taxids:
+        length_label, check_label = "{0}_length".format(check_taxid),"{0}_check".format(check_taxid)
+        check_len = lm_row[length_label]
+        if check_len == 0:
             continue
-        comb_fasta = "{0}/{1}.fasta".format(combined_dir,tid)
-        comb_df = fastautil.load_UCSC_NCBI_df(comb_fasta,taxid_dict)
-        for i,taxid in enumerate(UCSC_taxids):
-            spec_length = comb_df.loc[(comb_df['NCBI_taxid']==taxid) & (comb_df.index.str.contains("ENST")), 'length']
-            if len(spec_length) == 1:
-                lm_df.loc[tid,UCSC_cols[i]] = spec_length.iloc[0]
-            elif len(spec_length) == 0:
-                continue
-            else:
-                print("More than one length value for taxid.")
-                display(spec_length)
-                print("Transcript ID: {0}".format(tid))
-                print("TaxID: {0}".format(taxid))
-        for i,taxid in enumerate(NCBI_taxids):
-            spec_length = comb_df.loc[(comb_df['NCBI_taxid']==taxid) & ~(comb_df.index.str.contains("ENST")), 'length']
-            if len(spec_length) == 1:
-                lm_df.loc[tid,NCBI_cols[i]] = spec_length.iloc[0]
-            elif len(spec_length) == 0:
-                continue
-            else:
-                print("More than one length value for taxid.")
-                display(spec_length)
-                print("Transcript ID: {0}".format(tid))
-                print("TaxID: {0}".format(taxid))
-    lm_df.to_csv(suppl_lm_df_fpath,sep='\t')
-    return suppl_lm_df_fpath
+        length_discrepancy = (check_len-ncbi_len)/check_len
+        # length_only_check = np.abs(length_discrepancy)<=len_tol
+        # if length_only_check:
+        #     spec_checks[check_label] = length_only_check
+        # else:
+        # if True:
+        #If needed, calculate id_dm and associated variables once. Filter file to speed up id calculation time
+        if not precalc_id_dm:
+            filtered_ids = ucsc_df.loc[ucsc_df['NCBI_taxid'].isin(check_taxids)].index.append(ncbi_df.index)
+            tmp_fpath = "tmp/lm_checks.fasta"
+            fautil.filter_fasta_infile(filtered_ids, combined_fasta_fpath, tmp_fpath)
+            id_dm, align_srs = fautil.construct_id_dm(filtered_ids, tmp_fpath, filtered=True, aligned=True)
+            ncbi_pos = align_srs.index.get_loc(ncbi_df.index[0])
+            ncbi_id_row = id_dm[ncbi_pos, :]
+            closest_taxid = check_taxids[0]
+            ce_record = ucsc_df.loc[ucsc_df['NCBI_taxid']==closest_taxid,:].index[0]
+            ce_row = id_dm[align_srs.index.get_loc(ce_record),:]
+            precalc_id_dm = True
 
-def length_metric_checks(taxid_dict,dir_vars,length_metrics_fpath,tolerance=0.05,how='all',overwrite=False):
+        check_record = ucsc_df.loc[ucsc_df['NCBI_taxid']==check_taxid].index[0]
+        check_dm_pos = align_srs.index.get_loc(check_record)
+        overall_id_val = ncbi_id_row[check_dm_pos]
+        #Correct for terminal Z character in UCSC sequences
+        align_len = len(align_srs.iloc[0])
+        ucsc_id_len_correction = 1/align_len
+        #Aligned_portion_identity: Subtract out length discrepancy fraction of longest record length from id_dm value
+        #Scale by inverse fraction of non-discrepancy length (ie max alignable portion given sequence lengths)
+        align_discr_ratio = np.abs(check_len-ncbi_len)/align_len
+        aligned_check_ratio = (1 - align_discr_ratio)
+        aligned_portion_identity = (overall_id_val - align_discr_ratio  - ucsc_id_len_correction)/aligned_check_ratio
+        ce_check_id = 1.1*(ce_row[check_dm_pos]/aligned_check_ratio)
+        id_tol = min(max_id_tol,max(ce_check_id,min_id_tol))
+        spec_checks[check_label] = (aligned_portion_identity <= id_tol)
+    return spec_checks
+
+def length_metric_checks(length_metrics_fpath,len_tol=0.05,min_id_tol=0.1,max_id_tol=0.3,evo_how='all',pass_how='most',
+                         recalc_spec_checks=False,recalc_pass_checks=False):
     """Returns a DataFrame check_df with transcript_id index and columns corresponding to taxonomy IDs and values
     on whether that species record passed length checks.
 
-    :param (dict) taxid_dict: maps taxid to species name for NCBI analysis species
-    :param dir_vars: maps 'bestNCBI_parent' to directory path for bestNCBI-record-against-UCSC alignment data
     :param length_metrics_fpath: file path to length_metrics_table
-    :param tolerance: Maximum percent difference in length tolerated for a sequence record to pass length checks
-    :param (str) how: accepted values: 'any','all','most'. Any: any length checks pass->True. All: all checks->True.
+    :param len_tol: Maximum percent difference in length tolerated for a sequence record to pass length checks
+    :param min_id_tol, max_id_tol: If NCBI record length doesn't meet len_tol, check length-adjusted identity. Threshold
+     identity value used to pass will be based on closest_evo record distance to check record. If no closest evo record
+     is present
+    :param (str) evo_how: accepted values: 'all' or 'closest'. Determines which evolutionary relatives are used to
+    calculate species specific checks. 'all': closest and secondary, 'closest': closest only
+    :param (str) pass_how: accepted values: 'any','all','most'. Any: any length checks pass->True. All: all checks->True.
     Most: Over half pass->True
+    :param recalc_spec_checks:
     :return: lm_checks: DataFrame, for each transcript_id in length metrics table, containsboolean values for each
     taxonomy ID which correspond to whether the bestNCBI record for that species passed length checks as specified with
     how.
@@ -190,49 +225,67 @@ def length_metric_checks(taxid_dict,dir_vars,length_metrics_fpath,tolerance=0.05
     4) mus musculus record and 5) For heterocephalus glaber: checks against UCSC data for het g. For Urocitellus parryii:
     checks against speTri record length in UCSC data.
     """
-    suppl_lm_df_fpath = length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath)
-    check_col_labels = ["{0}_check".format(taxid) for taxid in taxid_dict]
+    closest_evo_taxids, secondary_evo_taxids = filt.CLOSEST_EVO_TAXIDS, filt.SECONDARY_EVO_TAXIDS
+    evo_taxids = {}
+    for taxid in taxid_dict:
+        if evo_how == 'all':
+            check_taxids = [closest_evo_taxids[taxid]] + secondary_evo_taxids[taxid]
+        elif evo_how == 'closest':
+            check_taxids = [closest_evo_taxids[taxid]]
+        else:
+            raise ValueError("parameter 'evo_how' must be 'all' or 'closest'.")
+        evo_taxids[taxid] = check_taxids
 
+    check_col_labels = ["{0}_check".format(taxid) for taxid in taxid_dict]
     checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
-    if os.path.exists(checks_fpath) and not overwrite:
+    if os.path.exists(checks_fpath) and not recalc_pass_checks:
         return
     elif os.path.exists(checks_fpath):
         check_df = pd.read_csv(checks_fpath,sep='\t',index_col=0)
     else:
         check_df = pd.DataFrame(columns=check_col_labels)
     check_df.index.name = "UCSC_transcript_id"
-    suppl_lm_df = pd.read_csv(suppl_lm_df_fpath,sep='\t',index_col=0)
-    tax_specific_checks = {9999:['43179_length'],10181:['10181_UCSC_length'],29073:[],9994:[]}
+    lm_df,_ = filt.length_metrics_df(length_metrics_fpath,taxid_dict)
     for taxid in taxid_dict:
-        length_label = "{0}_length".format(taxid)
+        tax_length_label = "{0}_ncbi_length".format(taxid)
         check_col = "{0}_check".format(taxid)
-        check_labels = ['euth_median','bestncbi_median','9606_length','10090_length']
-        check_labels.extend(tax_specific_checks[taxid])
+        check_labels = ["clade_check", "bestncbi_check"]
+        check_taxids = evo_taxids[taxid]
+        tax_specific_check_labels = ["{0}_check".format(check_taxid) for check_taxid in check_taxids]
+        check_labels.extend(tax_specific_check_labels)
         spec_indiv_checks_fpath = "{0}/{1}_length_checks.tsv".format(dir_vars['combined_run'], taxid)
         if os.path.exists(spec_indiv_checks_fpath):
             spec_indiv_checks = pd.read_csv(spec_indiv_checks_fpath,sep='\t',index_col=0)
         else:
             spec_indiv_checks = pd.DataFrame(columns=check_labels)
-        for idx,row in suppl_lm_df.iterrows():
-            # if idx in check_df.index and not check_df.loc[idx,:].count()==0 and \
-            #     idx in spec_indiv_checks.index and not spec_indiv_checks.loc[idx,:].count()==0:
-            #     continue
-            spec_length = row[length_label]
+        for ucsc_tid,lm_row in lm_df.iterrows():
+            spec_length = lm_row[tax_length_label]
             if np.isnan(spec_length):
                 #If no spec_length (ie no available record for species) use np.nan as fill values to differentiate
                 #from failed checks
-                check_df.loc[idx,check_col] = np.nan
-                spec_indiv_checks.loc[idx,:] = np.nan
+                check_df.loc[ucsc_tid,check_col] = np.nan
+                spec_indiv_checks.loc[ucsc_tid,:] = np.nan
             else:
-                check_lengths = row[check_labels]
-                checks = np.abs((check_lengths-spec_length)/check_lengths) <= tolerance
-                spec_indiv_checks.loc[idx, :] = checks
-                if how == 'any':
-                    check_df.loc[idx,check_col] = checks.any()
-                elif how=='all':
-                    check_df.loc[idx, check_col] = checks.all()
-                elif how=='most':
-                    check_df.loc[idx, check_col] = sum(checks)/len(checks) >= 0.5
+                if ucsc_tid in spec_indiv_checks.index and not recalc_spec_checks:
+                    spec_row = spec_indiv_checks.loc[ucsc_tid,:]
+                    nonna = spec_row.dropna()
+                    pass_ratio = sum(nonna)/len(nonna)
+                    ncbi_only_check = (nonna['bestncbi_check'] and sum(nonna) == 1)
+                else:
+                    combined_fasta_fpath = "{0}/combined/{1}/{2}.fasta".format(dir_vars['bestNCBI_parent'],taxid,ucsc_tid)
+                    spec_checks = id_length_check(combined_fasta_fpath,lm_row,check_taxids,len_tol,min_id_tol,max_id_tol)
+                    spec_indiv_checks.loc[ucsc_tid, :] = spec_checks
+                    pass_ratio = sum(spec_checks.values())/len(spec_checks)
+                    ncbi_only_check = (spec_checks['bestncbi_check']==True and sum(spec_checks.values()) == 1)
+                if pass_how == 'any':
+                    pass_check = (pass_ratio > 0) and not ncbi_only_check
+                    check_df.loc[ucsc_tid,check_col] = pass_check
+                elif pass_how=='all':
+                    pass_check = (pass_ratio == 1) and not ncbi_only_check
+                    check_df.loc[ucsc_tid, check_col] = pass_check
+                elif pass_how=='most':
+                    pass_check = (pass_ratio >= 0.5) and not ncbi_only_check
+                    check_df.loc[ucsc_tid, check_col] = pass_check
         spec_indiv_checks.to_csv(spec_indiv_checks_fpath,sep='\t')
 
     check_df.to_csv(checks_fpath,sep='\t')
@@ -241,11 +294,11 @@ if __name__ == "__main__":
     pd.options.display.max_columns = None
     update_checks = True
     if update_checks:
-        from utility.directoryUtility import config,taxid_dict,dir_vars
         length_metrics_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
-        # length_metric_supplement(taxid_dict,dir_vars,length_metrics_fpath,force_overwrite=False)
-        length_metric_checks(taxid_dict,dir_vars,length_metrics_fpath,how='most',overwrite=False)
+        # length_metric_checks(length_metrics_fpath,recalc_pass_checks=True,recalc_spec_checks=True)
+        length_metric_checks(length_metrics_fpath, recalc_pass_checks=True, recalc_spec_checks=False)
     checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
     check_df = pd.read_csv(checks_fpath, sep='\t', index_col=0)
-    suppl_fpath = "{0}/length_metrics_suppl.tsv".format(dir_vars['combined_run'])
-    suppl_df = pd.read_csv(suppl_fpath, sep='\t', index_col=0)
+    for col in check_df:
+        col_nonna = check_df[col].dropna()
+        print("Number of passed tests for label {0}: {1}".format(col,sum(col_nonna)))
