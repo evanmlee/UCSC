@@ -421,8 +421,8 @@ class ConservationTest(unittest.TestCase):
         sub_thresh_len = test_records_df.loc[test_records_df['length'] < ncbi_len * 0.8]
         self.assertTrue(len(sub_thresh_len) == 0)
 
-        cs.overall_summary_table(dir_vars, xref_df, taxid_dict, UCSC_tax_subset=ucsc_tax_subset,
-                                 length_checks_fpath=length_checks_fpath)#,skip_overall=False)
+        # cs.overall_summary_table(dir_vars, xref_df, taxid_dict, UCSC_tax_subset=ucsc_tax_subset,
+        #                          length_checks_fpath=length_checks_fpath)#,skip_overall=False)
 
     def test_blosum(self):
         from utility.directoryUtility import dir_vars

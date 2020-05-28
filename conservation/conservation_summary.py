@@ -173,8 +173,6 @@ def overall_summary_table(xref_table,
                     ucsc_partititon = (combined_fasta_df.index.str.contains("ENST"))
                     if len(UCSC_tax_subset) > 0:
                         ucsc_partititon = ucsc_partititon & (combined_fasta_df['NCBI_taxid'].isin(UCSC_tax_subset))
-                    # ncbi_partition = (combined_fasta_df['NCBI_taxid']==ncbi_taxid) & \
-                    #                  ~(combined_fasta_df.index.str.contains("ENST"))
                     ncbi_partition = ~(combined_fasta_df.index.str.contains("ENST"))
                     ucsc_analysis_subset = combined_fasta_df.loc[ucsc_partititon].index
                     ncbi_idx = combined_fasta_df.loc[ncbi_partition,:].index
@@ -221,6 +219,10 @@ def overall_summary_table(xref_table,
             overall_df.loc[:,'Test-Outgroup BLOSUM US Z-Score'] = us_blos
             overall_df.to_csv(overall_summary_fpath, sep='\t', float_format='%.5f')
 
+def overall_gene_summary_table(overall_summary_fpath):
+    overall_table = pd.read_csv(overall_summary_fpath,sep='\t',index_col=0)
+    display(overall_table)
+
 
 def main():
     from utility.directoryUtility import taxid_dict, dir_vars
@@ -228,7 +230,9 @@ def main():
     xref_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
     xref_df = orutil.load_NCBI_xref_table(xref_fpath)
     length_checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
-    overall_summary_table(xref_df, length_checks_fpath=length_checks_fpath)
+    # overall_summary_table(xref_df, length_checks_fpath=length_checks_fpath,skip_overall=False)
+    test_fpath = "{0}/9999_summary.tsv".format(dir_vars['summary_run'])
+    overall_gene_summary_table(test_fpath)
 
 if __name__ == "__main__":
     main()

@@ -5,6 +5,7 @@ import numpy as np
 import subprocess
 import requests
 import xml.etree.ElementTree as ET
+from Bio import SeqIO
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -209,7 +210,7 @@ def fetch_NCBI_protein_records(NCBI_gid_df, taxid_dict, dir_vars,
                                          api_key_ext=api_key_ext,pid_tsv_fpath=protein_ID_tsv_fpath)
 
 
-def mrna_ortholog_request(dir_vars,gid,taxid,best_record_id,pid_str):
+def mrna_ortholog_request(dir_vars,tid,gid,taxid,best_record_id,pid_str):
     """Given NCBI Gene ID, taxonomy ID for species, and accession number for best Protein record, downloads corresponding
     Nucleotide data to subdirectory in dir_vars['orthologs_nuc'].
 
@@ -233,19 +234,47 @@ def mrna_ortholog_request(dir_vars,gid,taxid,best_record_id,pid_str):
     pid = pid_list[best_idx]
     efetch_req = "efetch.fcgi?db=protein&id={0}&rettype=fasta_cds_na&retmode=text".format(pid)
     efetch_url = ENTREZ_BASE_URL + efetch_req
-    tax_nuc_fasta_path = "{0}/{1}/{2}.fasta".format(dir_vars['orthologs_nuc'],taxid,gid)
+    tax_nuc_fasta_path = "{0}/{1}/{2}.fasta".format(dir_vars['orthologs_nuc'],taxid,tid)
     subprocess.run(args=['wget', efetch_url, '-O', tax_nuc_fasta_path])
 
-def fetch_mrna_records(dir_vars,taxid_dict,xref_fpath,protein_id_fpath,length_checks_fpath=""):
+def fetch_mrna_records(length_checks_fpath="",overwrite_mrna_files=False):
+    """
+
+    :param dir_vars:
+    :param taxid_dict:
+    :param xref_fpath:
+    :param protein_id_fpath:
+    :param length_checks_fpath:
+    :return:
+    """
     #TODO fill me in
-    xref_df = load_NCBI_xref_table(xref_fpath)
-    pid_df = pd.read_csv(protein_id_fpath,sep='\t',index_col=0)
+    pid_tsv_fpath = "{0}/NCBI_protein_IDs.tsv".format(dir_vars['orthologs_parent'])
+    pid_df = pd.read_csv(pid_tsv_fpath, sep='\t', index_col=0)
+    xrefs_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
+    xref_df = load_NCBI_xref_table(xrefs_fpath, gid_dtype='int')
 
     if not length_checks_fpath:
         check_lengths= False
     else:
         lc_df = pd.read_csv(length_checks_fpath,sep='\t',index_col=0)
         check_lengths = True
+    for ncbi_taxid in taxid_dict:
+        if check_lengths:
+            col_label = "{0}_check".format(ncbi_taxid)
+            lc_col = lc_df[col_label]
+        pid_col = pid_df["{0}_pids".format(ncbi_taxid)]
+        for tid, row in xref_df.iterrows():
+            ncbi_hgid, hgnc_symbol = row['NCBI_gid'], row['HGNC_symbol']
+            best_aa_fpath = "{0}/best_raw/{1}/{2}.fasta".format(dir_vars['bestNCBI_parent'], ncbi_taxid, tid)
+            best_nuc_fpath = "{0}/{1}/{2}.fasta".format(dir_vars['orthologs_nuc'],ncbi_taxid,tid)
+            if os.path.exists(best_aa_fpath) \
+                and (not os.path.exists(best_nuc_fpath or overwrite_mrna_files)) \
+                and (not check_lengths or (check_lengths and lc_col[tid]==True)):
+                best_record_id = [fasta.id for fasta in SeqIO.parse(best_aa_fpath,'fasta')][0]
+                pid_str = pid_col[ncbi_hgid]
+                mrna_ortholog_request(dir_vars,tid,ncbi_hgid,ncbi_taxid,best_record_id,pid_str)
+
+
 
 from query import orthologUtility as orutil
 from IPython.display import display
@@ -255,3 +284,6 @@ from utility.directoryUtility import dir_vars,taxid_dict
 # display(filt)
 # fetch_NCBI_protein_records(filt, taxid_dict, dir_vars,
 #                                overwrite_fasta=[2268], NCBI_api_key='',tax_subset=None)
+
+lc_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
+fetch_mrna_records(lc_fpath)
