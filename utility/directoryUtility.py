@@ -129,6 +129,13 @@ def directory_variables(config):
     dir_vars = dict(zip(dir_variable_labels,dir_values))
     return dir_vars
 
+def parse_ucsc_tax_config(config):
+    ucsc_tax_config =config['UCSC_TAXONOMY']
+    ucsc_taxids = [int(k) for k in ucsc_tax_config.keys()]
+    ucsc_spec_names = [ucsc_tax_config[k].strip() for k in ucsc_tax_config.keys()]
+    ucsc_taxid_dict = dict(zip(ucsc_taxids,ucsc_spec_names))
+    return ucsc_taxid_dict
+
 def config_initialization(config_path="config/config.txt"):
     """Reads config file, generates directories based on run parameters in config
 
@@ -141,6 +148,7 @@ def config_initialization(config_path="config/config.txt"):
     taxids = [int(k) for k in taxonomy_config.keys()]
     spec_names = [taxonomy_config[k].strip() for k in taxonomy_config.keys()]
     taxid_dict = dict(zip(taxids,spec_names))
+
     dir_vars = directory_variables(config)
     create_run_directories(dir_vars,taxid_dict)
     config_copy_path = "{0}/config.txt".format(dir_vars['summary_run'])
@@ -148,3 +156,4 @@ def config_initialization(config_path="config/config.txt"):
     return config, taxid_dict, dir_vars
 
 config, taxid_dict, dir_vars = config_initialization()
+ucsc_taxid_dict = parse_ucsc_tax_config(config)
