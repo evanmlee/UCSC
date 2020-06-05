@@ -6,6 +6,7 @@ from IPython.display import display
 from conservation import analysis_calc as ac, analysis_record_filter as ar_filt
 from utility import UCSCerrors
 from utility import fastaUtility as fasta
+from utility.directoryUtility import taxid_dict, dir_vars, create_directory
 
 
 def write_exon_diffs_table(align_df,exon_diffs_cols,test_idx,exon_diffs_fpath):
@@ -212,16 +213,162 @@ def overall_summary_table(xref_table,
                 formatted = formatted.rename(columns={'JSD Z-Score':'JSD Alignment Z-Score','Test-Outgroup BLOSUM Z-Score':
                                                 'Test-Outgroup BLOSUM Alignment Z-Score'})
                 overall_df = overall_df.append(formatted, ignore_index=True, sort=False)
-        # #Unique Substitution Set-wide Z scores for JSD and BLOSUM
+
         if not skip_overall:
-            us_jsd, us_blos = ac.calc_z_scores(overall_df['JSD']), ac.calc_z_scores(overall_df['Test-Outgroup BLOSUM62'])
-            overall_df.loc[:,'JSD US Z-Score'] = us_jsd
-            overall_df.loc[:,'Test-Outgroup BLOSUM US Z-Score'] = us_blos
             overall_df.to_csv(overall_summary_fpath, sep='\t', float_format='%.5f')
 
-def overall_gene_summary_table(overall_summary_fpath):
-    overall_table = pd.read_csv(overall_summary_fpath,sep='\t',index_col=0)
-    display(overall_table)
+def load_overall_summary_table(overall_summary_fpath):
+    overall_table = pd.read_csv(overall_summary_fpath, sep='\t', index_col=0)
+    return overall_table
+
+def filter_gap_positions(overall_df,gap_fraction_thresh=0.5):
+    """Filter out unique substitutions where NCBI variant is '-' (dels) or gap fraction > gap_fraction_thresh."""
+    non_gaps = overall_df.loc[overall_df['Gap Fraction'] < gap_fraction_thresh, :]
+    non_gaps = non_gaps.loc[non_gaps['NCBI Variant'] != '-', :]
+    return non_gaps
+
+def write_gene_set_txt(gene_set,gene_fpath,overwrite=False):
+    """Given gene_set and gene_fpath, write a simple text file list of symbols in gene_set."""
+    if os.path.exists(gene_fpath) and not overwrite:
+        print("File already exists at file path: {0}".format(gene_fpath))
+        print("Specify 'overwrite=True' to replace file.")
+        return
+    with open(gene_fpath,'wt') as gene_f:
+        for gene_symbol in gene_set:
+            if type(gene_symbol) == float and np.isnan(gene_symbol):
+                continue
+            fline = gene_symbol.strip().upper()
+            gene_f.write("{0}\n".format(fline))
+
+def write_background_gene_set(taxid,length_checks_fpath,xref_fpath,overwrite=False):
+    from query.orthologUtility import load_NCBI_xref_table
+    taxid_label = "{0}_check".format(taxid)
+    lc_df = pd.read_csv(length_checks_fpath,sep='\t',index_col=0)
+    lc_col = lc_df[taxid_label]
+    # display(lc_col)
+
+    # passed_df = lc_col[lc_col==True]
+
+    passed_df = lc_df.loc[lc_df[taxid_label]==True,:]
+
+    xref_df = load_NCBI_xref_table(xref_fpath)
+    passed_symbols = xref_df.loc[passed_df.index,'HGNC_symbol'].unique()
+    print("Taxid: {0}".format(taxid))
+    print("Number transcripts passing length checks: {0}".format(len(passed_df)))
+    print("Number passed gene symbols: {0}".format(len(passed_symbols)))
+    print("Number transcripts failing length checks: {0}".format(len(lc_df.loc[lc_df[taxid_label]==False,:])))
+    geneset_dir = "{0}/conservation/gene_sets".format(dir_vars['summary_run'])
+    create_directory(geneset_dir)
+    bg_fpath = "{0}/{1}_analysis_genes.txt".format(geneset_dir,taxid)
+    write_gene_set_txt(passed_symbols,bg_fpath,overwrite=overwrite)
+
+def overall_suppl_calculations(taxid,check_percentiles=[]):
+    overall_summary_fpath = "{0}/conservation/{1}_summary.tsv".format(dir_vars['summary_run'],taxid)
+    suppl_outpath = "{0}/conservation/{1}_nongaps_suppl.tsv".format(dir_vars['summary_run'],taxid)
+    overall_df = load_overall_summary_table(overall_summary_fpath)
+    nongaps_df = filter_gap_positions(overall_df,gap_fraction_thresh=0.5)
+    # us_jsd, us_blos = ac.calc_z_scores(overall_df['JSD']), ac.calc_z_scores(overall_df['Test-Outgroup BLOSUM62'])
+    # overall_df.loc[:, 'JSD US Z-Score'] = us_jsd
+    # overall_df.loc[:, 'Test-Outgroup BLOSUM US Z-Score'] = us_blos
+
+    ng_jsd, ng_norm_blos = nongaps_df['JSD'],((3-nongaps_df['Test-Outgroup BLOSUM62'])/7)
+    ng_jsd_z, ng_normblos_z = ac.calc_z_scores(ng_jsd), ac.calc_z_scores(ng_norm_blos)
+    #JSD BLOSUM Product - product of JSD and Normalized BLOSUM (normalized to range of non-diagonal entries with
+    # -4 mapping to 1 and 3 to 0)
+    ng_jbp = ng_jsd*ng_norm_blos
+    display(ng_jbp)
+    col_labels = ["Norm. BLOSUM62","Non-Gap JSD Z","Non-Gap Norm. BLOSUM62 Z","JSD BLOSUM Product"]
+    append_srs = [ng_norm_blos,ng_jsd_z,ng_normblos_z,ng_jbp]
+    append_columns = dict(zip(col_labels,append_srs))
+    for label in append_columns:
+        col = append_columns[label]
+        nongaps_df.loc[:,label] = col
+
+    percentiles = {}
+    ng_jbp_nonna = ng_jbp.dropna()
+    if not check_percentiles:
+        check_percentiles = [80,95,99]
+    for p in check_percentiles:
+        percentiles[p] = np.percentile(ng_jbp_nonna,p)
+    print(percentiles)
+    for p in percentiles:
+        p_feature = "{0}_percentile".format(p)
+        percentile = percentiles[p]
+        p_srs = ng_jbp >= percentile
+        nongaps_df.loc[:,p_feature] = p_srs
+
+        # display(nongaps_df)
+        # display(nongaps_df[p_feature])
+        pthresh_df = nongaps_df.loc[nongaps_df[p_feature],:]
+        pthresh_gene_set = pthresh_df['Gene'].dropna().unique()
+        gene_set_dir = "{0}/conservation/gene_sets".format(dir_vars['summary_run'])
+        create_directory(gene_set_dir)
+        pthresh_fpath = "{0}/{1}_{2}tile_genes.txt".format(gene_set_dir,taxid,p)
+        write_gene_set_txt(pthresh_gene_set,pthresh_fpath,overwrite=True)
+
+    nongaps_df.to_csv(suppl_outpath,sep='\t',float_format='%.4f')
+
+
+    # jsd_usz_min, jsd_usz_max = overall_df['JSD US Z-Score'].min(), overall_df['JSD US Z-Score'].max()
+    # blos_usz_min, blos_usz_max = overall_df['Test-Outgroup BLOSUM US Z-Score'].min(), \
+    #                              overall_df['Test-Outgroup BLOSUM US Z-Score'].max()
+    # trans_jsd_usz = (overall_df['JSD US Z-Score'] - jsd_usz_min) / (jsd_usz_max - jsd_usz_min)
+    # trans_blos_usz = (blos_usz_max - overall_df['Test-Outgroup BLOSUM US Z-Score']) / (blos_usz_max - blos_usz_min)
+
+
+
+def gene_statistics_table(overall_summary_fpath):
+    overall_table = load_overall_summary_table(overall_summary_fpath)
+    tid_set = overall_table['Transcript ID'].unique()
+    symbol_set = overall_table['Gene'].unique()
+    i = 0
+    iteration_limit = 5
+    # test_symbol_set = ["TTC22","ATP5MC1"]
+    # symbol_set = test_symbol_set
+    gs_columns = ["Gene","n_uniques","sum_JSD_sq","sum_JSD_BLOS"]
+    gene_stats_df = pd.DataFrame(columns=gs_columns)
+    # for symbol in symbol_set:
+    jsd_usz_min, jsd_usz_max = overall_table['JSD US Z-Score'].min(),overall_table['JSD US Z-Score'].max()
+    blos_usz_min, blos_usz_max = overall_table['Test-Outgroup BLOSUM US Z-Score'].min(), \
+                               overall_table['Test-Outgroup BLOSUM US Z-Score'].max()
+    print("JSD US-Z min: {0}".format(jsd_usz_min))
+    print("JSD US-Z max: {0}".format(jsd_usz_max))
+    print("Blos US-Z min: {0}".format(blos_usz_min))
+    print("Blos US-Z max: {0}".format(blos_usz_max))
+    for tid in tid_set:
+        if i > iteration_limit:
+            break
+        else:
+            i+=1
+        # symbol_df = overall_table.loc[overall_table['Gene']==symbol,:]
+        symbol_df = overall_table.loc[overall_table['Transcript ID']==tid,:]
+        n_subs = len(symbol_df)
+        symbol = symbol_df['Gene'].iloc[0]
+        with pd.option_context('display.max_columns',None):
+            # if n_subs > 20:
+                # display(symbol_df)
+            print("=={0}==".format(tid))
+            print("Symbol: {0}".format(symbol))
+            blos_srs = symbol_df['Test-Outgroup BLOSUM62']
+            jsd_srs = symbol_df['JSD']
+            avg_jsd = np.mean(symbol_df['JSD'])
+            avg_blos = np.nanmean(blos_srs)
+            norm_blos = (3- blos_srs)/7
+            jsd_blos_feature= jsd_srs*norm_blos
+            jsd_sq = jsd_srs*jsd_srs
+            # jsd_blos_zscore = -symbol_df['JSD US Z-Score']*symbol_df['Test-Outgroup BLOSUM US Z-Score']
+            trans_jsd_usz = (symbol_df['JSD US Z-Score'] - jsd_usz_min)/(jsd_usz_max-jsd_usz_min)
+            # trans_blos_usz = (symbol_df['Test-Outgroup BLOSUM US Z-Score'] - blos_usz_min) / (blos_usz_max- blos_usz_min)
+            trans_blos_usz = (blos_usz_max-symbol_df['Test-Outgroup BLOSUM US Z-Score'])/(blos_usz_max-blos_usz_min)
+            # display(trans_jsd_usz)
+            # display(trans_blos_usz)
+            jsd_blos_feature = trans_jsd_usz*trans_blos_usz
+            test_cols = ["JSD_tf", "Blos_tf", "JSD-Blos_tf"]
+            test_dict = dict(zip(test_cols,[trans_jsd_usz,trans_blos_usz,jsd_blos_feature]))
+            test_df = pd.DataFrame(test_dict)
+            display(test_df)
+            # print(sum(jsd_blos_feature.dropna()))
+            # print(sum(jsd_sq))
 
 
 def main():
@@ -231,8 +378,8 @@ def main():
     xref_df = orutil.load_NCBI_xref_table(xref_fpath)
     length_checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
     # overall_summary_table(xref_df, length_checks_fpath=length_checks_fpath,skip_overall=False)
-    test_fpath = "{0}/9999_summary.tsv".format(dir_vars['summary_run'])
-    overall_gene_summary_table(test_fpath)
+    # test_fpath = "{0}/conservation/9994_summary.tsv".format(dir_vars['summary_run'])
+    # gene_statistics_table(test_fpath)
 
 if __name__ == "__main__":
     main()

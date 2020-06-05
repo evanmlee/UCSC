@@ -16,19 +16,17 @@
 
 import pandas as pd
 import matplotlib.pyplot as plt
+
 import os
 import numpy as np
 import matplotlib as mpl
+import seaborn as sns
 
 from IPython.display import display
+from utility.directoryUtility import taxid_dict,dir_vars
 
 mpl.rcParams['figure.dpi'] = 200
 mpl.rcParams['savefig.dpi'] = 200
-
-def read_overall_summary(config):
-    overall_fpath = "{0}/summary/overall_summary.tsv".format(config['RUN']['RunName'])
-    overall_df = pd.read_csv(overall_fpath,sep='\t',index_col=0)
-    return overall_df
 
 def get_scatter_alpha(overall_df):
     #Returns alpha value to use for scatter plots using overall_df
@@ -171,6 +169,115 @@ def summary_plots(config,plot_symbols=[]):
         gene_split_scatter(config, symbol, gs_consensus, use_jsd_zscore=2, use_blos_zscore=2)
     # display(gs_consensus)
 
+def generate_figures_dir():
+    from utility import directoryUtility as dirutil
+    summary_run_dir = dir_vars['summary_run']
+    paths = ["{0}/figures/uniques_conservation"]
+    for path in paths:
+        subdir_path = path.format(summary_run_dir)
+        for taxid in taxid_dict:
+            tax_subpath = "{0}/{1}".format(subdir_path,taxid)
+            dirutil.create_directory(tax_subpath)
+
+
+def JSD_BLOS_scatter(taxid,jsd_a,blos_a,alpha,xlabel="JSD",ylabel="Normalized Test-Outgroup BLOSUM62",
+                     jsd_threshs=[],blos_threshs=[],scatter_outpath=""):
+    """Generic function for JSD/BLOSUM scatter plot. If threshs are provided, plot percentile lines. If scatter_outpath
+    is provided, sace figure to path. """
+    plt.figure()
+    plt.xlim(0, 1)
+    scatter = plt.scatter(x=jsd_a, y=blos_a, s=2, alpha=alpha)  # alpha)
+    scatter.set_label("Non-gap uniques")
+    if blos_threshs:
+        xaxis_min, xaxis_max = 0, 1
+        ax_80 = plt.hlines(blos_threshs[0], xaxis_min, xaxis_max, colors='r', linestyles='dotted', alpha=0.25)
+        ax_95 = plt.hlines(blos_threshs[1], xaxis_min, xaxis_max, colors='r', linestyles='dashed', alpha=0.25)
+        ax_80.set_label("80th percentile")
+        ax_95.set_label("95th percentile")
+
+    if jsd_threshs:
+        yaxis_min, yaxis_max = plt.ylim()
+        plt.ylim(yaxis_min, yaxis_max)
+        ax_80 = plt.vlines(jsd_threshs[0], yaxis_min, yaxis_max, colors='r', linestyles='dotted', alpha=0.25)
+        ax_95 = plt.vlines(jsd_threshs[1], yaxis_min, yaxis_max, colors='r', linestyles='dashed', alpha=0.25)
+    plt.legend(loc="lower left", fontsize="x-small")
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title("Non-gap unique substitutions: {0}".format(taxid_dict[taxid]))
+    if scatter_outpath:
+        plt.savefig(scatter_outpath)
+    else:
+        plt.show()
+
+def metric_hist_plot(taxid, metric_label,metric_a, threshs=[],hist_fpath=""):
+    plt.figure()
+    plt.hist(metric_a,bins=40)
+    plt.xlabel(metric_label)
+    yaxis_min,yaxis_max = plt.ylim()
+    ax_80 = plt.vlines(threshs[0], yaxis_min, yaxis_max, colors='r', linestyles='dotted', alpha=0.5)
+    ax_95 = plt.vlines(threshs[1], yaxis_min, yaxis_max, colors='r', linestyles='dashed', alpha=0.5)
+    ax_80.set_label("80th percentile")
+    ax_95.set_label("95th percentile")
+    plt.title("{0} Histogram: {1}".format(metric_label,taxid_dict[taxid]))
+    plt.legend()
+    if hist_fpath:
+        plt.savefig(hist_fpath)
+    else:
+        plt.show()
+
+
+def JSD_BLOS_dist_plots(taxid,overwrite=False):
+    from conservation import conservation_summary as cs
+    from conservation import analysis_calc as ac
+    summary_run = dir_vars['summary_run']
+    uc_dir = "{0}/figures/uniques_conservation/{1}".format(summary_run,taxid)
+    print("Unique Conservation Dir: {0}".format(uc_dir))
+    overall_tsv_fpath = "{0}/conservation/{1}_summary.tsv".format(summary_run,taxid)
+    overall_df = cs.load_overall_summary_table(overall_tsv_fpath)
+
+    non_gaps = cs.filter_gap_positions(overall_df)
+    print("All uniques: {0}".format(len(overall_df)))
+    print("Non_gaps: {0}".format(len(non_gaps)))
+    ng_jsd= non_gaps['JSD']
+    non_gaps_jsd_z_score = ac.calc_z_scores(non_gaps['JSD'])
+    non_gaps_blos_z_score = ac.calc_z_scores(non_gaps['Test-Outgroup BLOSUM62'])
+    ng_norm_blos = ((3-non_gaps['Test-Outgroup BLOSUM62'])/7)
+    ng_norm_blos_nonna = ng_norm_blos.dropna()
+
+    ng_jsd_blos = ng_jsd*ng_norm_blos
+    ng_jsd_blos_nonna = ng_jsd_blos.dropna()
+    ng_jsd_blos_threshs = [np.percentile(ng_jsd_blos_nonna,80),np.percentile(ng_jsd_blos_nonna,95)]
+    alpha = 3850/(len(non_gaps))
+
+
+    jsd_threshs = [np.percentile(ng_jsd,80),np.percentile(ng_jsd,95)]
+    blos_threshs = [np.percentile(ng_norm_blos_nonna, 80), np.percentile(ng_norm_blos_nonna, 95)]
+    print(jsd_threshs)
+    print(blos_threshs)
+    jsd_hist_fpath = "{0}/figures/uniques_conservation/{1}/{1}_jsd_hist.png".format(summary_run, taxid)
+    if not os.path.exists(jsd_hist_fpath) or overwrite:
+        metric_hist_plot(taxid,"JSD",ng_jsd,threshs=jsd_threshs,hist_fpath=jsd_hist_fpath)
+    blos_hist_fpath = "{0}/figures/uniques_conservation/{1}/{1}_blos_hist.png".format(summary_run, taxid)
+    if not os.path.exists(blos_hist_fpath) or overwrite:
+        metric_hist_plot(taxid,"Normalized Test-Outgroup BLOSUM62",ng_norm_blos,threshs=blos_threshs,hist_fpath=blos_hist_fpath)
+    jsd_blos_hist_fpath = "{0}/figures/uniques_conservation/{1}/{1}_jsd-blos_hist.png".format(summary_run, taxid)
+    if not os.path.exists(jsd_blos_hist_fpath) or overwrite:
+        metric_hist_plot(taxid, "Normalized JSD*BLOSUM62", ng_jsd_blos, threshs=ng_jsd_blos_threshs,
+                         hist_fpath=jsd_blos_hist_fpath)
+
+    # jsd_usz, blos_usz = overall_df['JSD US Z-Score'],overall_df['Test-Outgroup BLOSUM US Z-Score']
+    # ax1 = sns.kdeplot(vals)
+    scatter_outpath = "{0}/figures/uniques_conservation/{1}/{1}_norm_scatter.png".format(summary_run, taxid)
+    if not os.path.exists(scatter_outpath) or overwrite:
+        JSD_BLOS_scatter(taxid,ng_jsd,ng_norm_blos,alpha,jsd_threshs=jsd_threshs,blos_threshs=blos_threshs,
+                         scatter_outpath=scatter_outpath)
+
+def main():
+    from matplotlib import rcParams
+    rcParams.update({'figure.autolayout': True})
+    generate_figures_dir()
+    for taxid in taxid_dict:
+        JSD_BLOS_dist_plots(taxid,overwrite=True)
+
 if __name__ == "__main__":
-    # main()
-    pass
+    main()

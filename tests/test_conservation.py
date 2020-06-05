@@ -153,6 +153,12 @@ class ConservationTest(unittest.TestCase):
         from utility.directoryUtility import taxid_dict,dir_vars
         from utility.NCBIfilter import CLOSEST_EVO_TAXIDS,SECONDARY_EVO_TAXIDS,length_metrics_df
         from numpy import isnan
+        from query import orthologUtility as orutil
+
+        lm_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
+        xref_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
+        xref_df = orutil.load_NCBI_xref_table(xref_fpath)
+        lm_df, ordered_ucsc_taxids = length_metrics_df(lm_fpath, taxid_dict)
 
         test_taxid,test_tid = 9999,"ENST00000367772.8"
         test_exon_ins_taxid, test_exon_ins_tid = 10181, "ENST00000602312.2"
@@ -161,23 +167,23 @@ class ConservationTest(unittest.TestCase):
         # test_taxid,test_tid = test_exon_ins_taxid,test_exon_ins_tid
         # test_taxid, test_tid = test_missing_records_taxid,test_missing_records_tid
         test_taxid,test_tid = test_dist_evos_taxid, test_dist_evos_tid
+        print("Test TaxID: {0}, Test Transcript ID: {1}".format(test_taxid, test_tid))
         check_taxids = [CLOSEST_EVO_TAXIDS[test_taxid]] + SECONDARY_EVO_TAXIDS[test_taxid]
         test_comb_fpath = "{0}/combined/{1}/{2}.fasta".format(dir_vars['bestNCBI_parent'],test_taxid,test_tid)
-        lm_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
-        lm_df, ordered_ucsc_taxids = length_metrics_df(lm_fpath,taxid_dict)
         lm_row = lm_df.loc[test_tid,:]
-        length_checks = ar_filt.id_length_check(test_comb_fpath,lm_row,check_taxids)
+        length_checks = ar_filt.id_length_check(test_comb_fpath,lm_row,check_taxids,quiet=True)
         self.assertTrue(sum(length_checks.values())==5)
 
         ###missing_records_test###
         test_missing_records_taxid, test_missing_records_tid = 29073, "ENST00000354619.10"
+        print("Test TaxID: {0}, Test Transcript ID: {1}".format(test_taxid, test_tid))
         test_taxid, test_tid = test_missing_records_taxid,test_missing_records_tid
         check_taxids = [CLOSEST_EVO_TAXIDS[test_taxid]] + SECONDARY_EVO_TAXIDS[test_taxid]
         test_comb_fpath = "{0}/combined/{1}/{2}.fasta".format(dir_vars['bestNCBI_parent'], test_taxid, test_tid)
         lm_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
         lm_df, ordered_ucsc_taxids = length_metrics_df(lm_fpath, taxid_dict)
         lm_row = lm_df.loc[test_tid, :]
-        length_checks = ar_filt.id_length_check(test_comb_fpath, lm_row, check_taxids)
+        length_checks = ar_filt.id_length_check(test_comb_fpath, lm_row, check_taxids,quiet=True)
         #Missing records check
         self.assertTrue("9646_check" not in length_checks)
         self.assertTrue("9708_check" in length_checks)
@@ -191,13 +197,44 @@ class ConservationTest(unittest.TestCase):
 
         #bad_homology_test
         test_taxid, test_tid = 29073, "ENST00000377627.7"
+        print("Test TaxID: {0}, Test Transcript ID: {1}".format(test_taxid,test_tid))
         check_taxids = [CLOSEST_EVO_TAXIDS[test_taxid]] + SECONDARY_EVO_TAXIDS[test_taxid]
         test_comb_fpath = "{0}/combined/{1}/{2}.fasta".format(dir_vars['bestNCBI_parent'], test_taxid, test_tid)
-        lm_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
-        lm_df, ordered_ucsc_taxids = length_metrics_df(lm_fpath, taxid_dict)
         lm_row = lm_df.loc[test_tid, :]
-        length_checks = ar_filt.id_length_check(test_comb_fpath, lm_row, check_taxids)
+        length_checks = ar_filt.id_length_check(test_comb_fpath, lm_row, check_taxids,quiet=True)
         self.assertTrue(sum(length_checks.values())==0)
+
+        #test ATP5MC1, AGS
+        test_taxid, test_tid = 9999, "ENST00000355938.9"
+        print("Test TaxID: {0}, Test Transcript ID: {1}".format(test_taxid, test_tid))
+        check_taxids = [CLOSEST_EVO_TAXIDS[test_taxid]] + SECONDARY_EVO_TAXIDS[test_taxid]
+        test_comb_fpath = "{0}/combined/{1}/{2}.fasta".format(dir_vars['bestNCBI_parent'], test_taxid, test_tid)
+        lm_row = lm_df.loc[test_tid, :]
+        length_checks = ar_filt.id_length_check(test_comb_fpath, lm_row, check_taxids,quiet=False)
+
+        #Check failed length/id checks:
+        lc_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
+        lc_df = pd.read_csv(lc_fpath,sep='\t',index_col=0)
+        failed_9999 = lc_df.loc[lc_df['9999_check']==False,:]
+
+        test_taxid = 9999
+        check_taxids = [CLOSEST_EVO_TAXIDS[test_taxid]] + SECONDARY_EVO_TAXIDS[test_taxid]
+
+        iter_idx = 0
+        iter_limit = 20
+        for tid in failed_9999.index:
+            if iter_idx >= iter_limit:
+                break
+            print("==TID: {0}==".format(tid))
+            symbol = xref_df.loc[tid,'HGNC_symbol']
+            print("Gene: {0}".format(symbol))
+            test_comb_fpath = "{0}/combined/{1}/{2}.fasta".format(dir_vars['bestNCBI_parent'], test_taxid, tid)
+            lm_row = lm_df.loc[tid, :]
+            length_checks = ar_filt.id_length_check(test_comb_fpath, lm_row, check_taxids, quiet=False)
+            print(length_checks)
+            iter_idx+=1
+
+        # self.assertTrue(sum(length_checks.values()) == 0)
 
     def test_spec_length_check_file_load(self):
         test_fpath = "combined_alignments/hg38AA_knownCanonical/4speciesv1/9999_length_checks.tsv"
@@ -424,9 +461,25 @@ class ConservationTest(unittest.TestCase):
         # cs.overall_summary_table(dir_vars, xref_df, taxid_dict, UCSC_tax_subset=ucsc_tax_subset,
         #                          length_checks_fpath=length_checks_fpath)#,skip_overall=False)
 
-    def test_blosum(self):
-        from utility.directoryUtility import dir_vars
-        # test_fpath = "combined_alignments/ENST00000054668.5.fasta"
+    def test_suppl_calcs1(self):
+        from utility.directoryUtility import dir_vars,taxid_dict
+        # cs.overall_suppl_calculations(9994,check_percentiles=[99])
+        lc_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
+        xref_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
+        for taxid in taxid_dict:
+            cs.write_background_gene_set(taxid,lc_fpath,xref_fpath,overwrite=True)
+            cs.overall_suppl_calculations(taxid, check_percentiles=[95,97,99])
+
+    def test_gene_sets(self):
+        test_fpath = "{0}/conservation/gene_sets/9999_analysis_genes.txt".format(directoryUtility.dir_vars['summary_run'])
+        print(os.path.exists(test_fpath))
+
+        with open(test_fpath,'rt') as ag_f:
+            ag_list = [fline.strip().upper() for fline in ag_f.readlines()]
+        print(len(ag_list))
+
+        ag_set = set(ag_list)
+        self.assertTrue(len(ag_set)==len(ag_list))
 
 
 if __name__ == "__main__":

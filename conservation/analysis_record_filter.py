@@ -127,7 +127,8 @@ def filter_analysis_subset(combined_fasta,records_tsv_fpath,UCSC_analysis_subset
     fautil.filter_fasta_infile(records_df.index,combined_fasta,outfile_path=filtered_outpath)
     return records_df, filtered_outpath
 
-def id_length_check(combined_fasta_fpath,lm_row,check_taxids,len_tol=0.05,min_id_tol=0.1,max_id_tol=0.3):
+def id_length_check(combined_fasta_fpath,lm_row,check_taxids,len_tol=0.05,min_id_tol=0.15,max_id_tol=0.3,
+                    ce_id_adjust=1.25,quiet=True):
     """For a given species represented by taxid, runs length - identity checks for record validity and returns a dict
     mapping check labels to True/ False values.
 
@@ -169,11 +170,6 @@ def id_length_check(combined_fasta_fpath,lm_row,check_taxids,len_tol=0.05,min_id
         if check_len == 0:
             continue
         length_discrepancy = (check_len-ncbi_len)/check_len
-        # length_only_check = np.abs(length_discrepancy)<=len_tol
-        # if length_only_check:
-        #     spec_checks[check_label] = length_only_check
-        # else:
-        # if True:
         #If needed, calculate id_dm and associated variables once. Filter file to speed up id calculation time
         if not precalc_id_dm:
             filtered_ids = ucsc_df.loc[ucsc_df['NCBI_taxid'].isin(check_taxids)].index.append(ncbi_df.index)
@@ -186,6 +182,9 @@ def id_length_check(combined_fasta_fpath,lm_row,check_taxids,len_tol=0.05,min_id
             ce_record = ucsc_df.loc[ucsc_df['NCBI_taxid']==closest_taxid,:].index[0]
             ce_row = id_dm[align_srs.index.get_loc(ce_record),:]
             precalc_id_dm = True
+            if not quiet:
+                print("ID DM: {0}".format(id_dm))
+                print("DM Record Labels: {0}".format(align_srs.index.values))
 
         check_record = ucsc_df.loc[ucsc_df['NCBI_taxid']==check_taxid].index[0]
         check_dm_pos = align_srs.index.get_loc(check_record)
@@ -198,12 +197,27 @@ def id_length_check(combined_fasta_fpath,lm_row,check_taxids,len_tol=0.05,min_id
         align_discr_ratio = np.abs(check_len-ncbi_len)/align_len
         aligned_check_ratio = (1 - align_discr_ratio)
         aligned_portion_identity = (overall_id_val - align_discr_ratio  - ucsc_id_len_correction)/aligned_check_ratio
-        ce_check_id = 1.1*(ce_row[check_dm_pos]/aligned_check_ratio)
+        ce_check_id = ce_id_adjust*(ce_row[check_dm_pos]/aligned_check_ratio)
         id_tol = min(max_id_tol,max(ce_check_id,min_id_tol))
+        if not quiet:
+            print("Check TaxID: {0}".format(check_taxid))
+            print("ID tolerance threshold: {0}".format(id_tol))
+            print("Check TaxID Against Closest Evo ID: {0}".format(ce_row[check_dm_pos]))
+            print("Length adjusted identity: {0}".format(aligned_portion_identity))
         spec_checks[check_label] = (aligned_portion_identity <= id_tol)
     return spec_checks
 
-def length_metric_checks(length_metrics_fpath,len_tol=0.05,min_id_tol=0.1,max_id_tol=0.3,evo_how='all',pass_how='most',
+def write_lm_params_file(params):
+    params_fpath = "{0}/length_checks_params.txt".format(dir_vars['combined_run'])
+    with open(params_fpath,'wt') as params_f:
+        for label in params:
+            val = params[label]
+            fline = "{0}: {1}\n".format(label,val)
+            params_f.write(fline)
+
+
+def length_metric_checks(length_metrics_fpath,len_tol=0.05,min_id_tol=0.15,max_id_tol=0.3,ce_id_adjust=1.25,
+                         evo_how='all',pass_how='most',
                          recalc_spec_checks=False,recalc_pass_checks=False):
     """Returns a DataFrame check_df with transcript_id index and columns corresponding to taxonomy IDs and values
     on whether that species record passed length checks.
@@ -273,7 +287,8 @@ def length_metric_checks(length_metrics_fpath,len_tol=0.05,min_id_tol=0.1,max_id
                     ncbi_only_check = (nonna['bestncbi_check'] and sum(nonna) == 1)
                 else:
                     combined_fasta_fpath = "{0}/combined/{1}/{2}.fasta".format(dir_vars['bestNCBI_parent'],taxid,ucsc_tid)
-                    spec_checks = id_length_check(combined_fasta_fpath,lm_row,check_taxids,len_tol,min_id_tol,max_id_tol)
+                    spec_checks = id_length_check(combined_fasta_fpath,lm_row,check_taxids,len_tol,min_id_tol,max_id_tol,
+                                                  ce_id_adjust=ce_id_adjust)
                     spec_indiv_checks.loc[ucsc_tid, :] = spec_checks
                     pass_ratio = sum(spec_checks.values())/len(spec_checks)
                     ncbi_only_check = (spec_checks['bestncbi_check']==True and sum(spec_checks.values()) == 1)
@@ -289,6 +304,10 @@ def length_metric_checks(length_metrics_fpath,len_tol=0.05,min_id_tol=0.1,max_id
         spec_indiv_checks.to_csv(spec_indiv_checks_fpath,sep='\t')
 
     check_df.to_csv(checks_fpath,sep='\t')
+    param_labels = ["min_id_tol","max_id_tol","closest_evo_thresh_adjust","evo_how","pass_how"]
+    param_vals = [min_id_tol,max_id_tol,ce_id_adjust,evo_how,pass_how]
+    params = dict(zip(param_labels,param_vals))
+    write_lm_params_file(params)
 
 if __name__ == "__main__":
     pd.options.display.max_columns = None
@@ -296,7 +315,7 @@ if __name__ == "__main__":
     if update_checks:
         length_metrics_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
         # length_metric_checks(length_metrics_fpath,recalc_pass_checks=True,recalc_spec_checks=True)
-        length_metric_checks(length_metrics_fpath, recalc_pass_checks=True, recalc_spec_checks=False)
+        # length_metric_checks(length_metrics_fpath, recalc_pass_checks=True, recalc_spec_checks=False)
     checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
     check_df = pd.read_csv(checks_fpath, sep='\t', index_col=0)
     for col in check_df:
