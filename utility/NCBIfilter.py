@@ -6,7 +6,7 @@ from collections import OrderedDict
 
 from utility import directoryUtility, UCSCerrors
 from IPython.display import display
-from utility.fastaUtility import UCSC_fasta_df, NCBI_fasta_df, filter_fasta_infile, min_dist_spec_record, \
+from utility.fastaUtility import load_UCSC_fasta_df, load_NCBI_fasta_df, filter_fasta_infile, min_dist_spec_record, \
     construct_id_dm,ucsc_tax_table
 from utility import fastaUtility as fautil
 from query import orthologUtility as orutil
@@ -53,8 +53,8 @@ def evo_relative_alignment(dir_vars,taxid,ucsc_tid,gid,how='all',alt_outpath="")
     :return:(pandas.Index) evo_records: Record IDs of used close evolutionary relatives for allNCBI alignment
     """
     allNCBI,reorg_parent,ds_id = [dir_vars[label] for label in ["allNCBI_parent","reorg_parent","dataset_identifier"]]
-    ucsc_raw_fpath = "{0}/{1}/{2}.fasta".format(reorg_parent,ds_id,ucsc_tid)
-    ucsc_raw_df = UCSC_fasta_df(ucsc_raw_fpath)
+    ucsc_raw_fpath = "{0}/{1}/all/{2}.fasta".format(reorg_parent,ds_id,ucsc_tid)
+    ucsc_raw_df = load_UCSC_fasta_df(ucsc_raw_fpath)
     orthologs_aa = dir_vars['orthologs_aa']
     ortho_fpath = "{0}/{1}/{2}.fasta".format(orthologs_aa,taxid,gid)
     if not os.path.exists(ortho_fpath):
@@ -198,8 +198,8 @@ def length_metrics_row(dir_vars,taxid_dict,lm_df,ordered_ucsc_taxids,ucsc_tid,nc
     :return: lm_df, updated with length information for this transcript id and gene id.
     """
     reorg_parent, ds_id = [dir_vars[label] for label in ['reorg_parent','dataset_identifier']]
-    ucsc_raw_fpath = "{0}/{1}/{2}.fasta".format(reorg_parent,ds_id,ucsc_tid)
-    ucsc_df = fautil.UCSC_fasta_df(ucsc_raw_fpath)
+    ucsc_raw_fpath = "{0}/{1}/all/{2}.fasta".format(reorg_parent,ds_id,ucsc_tid)
+    ucsc_df = fautil.load_UCSC_fasta_df(ucsc_raw_fpath)
     for taxid in ordered_ucsc_taxids:
         ucsc_col_label = "{0}_length".format(taxid)
         tax_len = ucsc_df.loc[(ucsc_df['NCBI_taxid'] == taxid), 'length'].iloc[0]
@@ -212,7 +212,7 @@ def length_metrics_row(dir_vars,taxid_dict,lm_df,ordered_ucsc_taxids,ucsc_tid,nc
     for taxid in taxid_dict:
         bestNCBI_fpath = "{0}/best_raw/{1}/{2}.fasta".format(dir_vars['bestNCBI_parent'],taxid,ucsc_tid)
         if os.path.exists(bestNCBI_fpath):
-            ncbi_df = fautil.NCBI_fasta_df(bestNCBI_fpath,taxid_dict)
+            ncbi_df = fautil.load_NCBI_fasta_df(bestNCBI_fpath,taxid_dict)
             # tax_len = ncbi_df.loc[(ncbi_df['NCBI_taxid'] == taxid), 'length'].iloc[0]
             tax_len = ncbi_df["length"].iloc[0]
             ncbi_col_label = "{0}_ncbi_length".format(taxid)

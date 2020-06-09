@@ -203,7 +203,7 @@ def main():
     formatted_local_fpath = "{0}/knownCanonical_orthologs_local.tsv".format(orthologs_dir)
     local_orthologs_fpath = formatted_local_fpath
     API_orthologs_fpath = "{0}/NCBI_orthologs_API.tsv".format(orthologs_dir)
-    NCBI_xref_inpath = "{0}/xref_summary_{1}/NCBI_xrefs.tsv".format(reorg_dir,dataset_name)
+    NCBI_xref_inpath = "xref/summary_{0}/NCBI_xrefs.tsv".format(dataset_name)
     dataset_id = dir_vars["dataset_identifier"]
     final_errors_fpath = "{0}/errors.tsv".format(summary_run_dir)
     final_orthologs_fpath = "{0}/orthologs_final.tsv".format(orthologs_dir)

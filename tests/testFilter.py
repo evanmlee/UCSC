@@ -1,9 +1,10 @@
 import unittest
 from query import NCBI_homology, sql_orthologs as so, api_orthologs as ao, orthologUtility as orutil
-from utility import NCBIfilter, fastaUtility, directoryUtility, UCSCerrors
+from utility import NCBIfilter, directoryUtility, UCSCerrors
 import pandas as pd
 from IPython.display import display
 import os
+
 
 class NCBIHomologyTest(unittest.TestCase):
 
@@ -11,7 +12,7 @@ class NCBIHomologyTest(unittest.TestCase):
         pass
     def test_transcript_table(self):
         config, taxid_dict, dir_vars = directoryUtility.config_initialization()
-        transcripts_fpath = "reorganized_data/xref_summary_knownCanonical/ensembl_xrefs.tsv"
+        transcripts_fpath = "xref/summary_knownCanonical/ensembl_xrefs.tsv"
         xref_tbl = NCBIfilter.load_transcript_table(transcripts_fpath)
         tid_index = xref_tbl.index
         t_tbl = so.SQL_transcript_table(dir_vars,tid_index)
@@ -66,7 +67,7 @@ class NCBIHomologyTest(unittest.TestCase):
 
     @unittest.skip("Works")
     def test_map_AGS_ids(self):
-        tsv_in_full = pd.read_csv("reorganized_data/xref_summary_knownCanonical/NCBI_xrefs.tsv",sep='\t',dtype=str)
+        tsv_in_full = pd.read_csv("xref/summary_knownCanonical/NCBI_xrefs.tsv",sep='\t',dtype=str)
         tsv_lim = tsv_in_full.iloc[:5,:]
         lim_fpath = "tmp/xrefs_lim.tsv"
         tsv_lim.to_csv(lim_fpath,sep='\t')
@@ -97,7 +98,7 @@ class NCBIfilterTest(unittest.TestCase):
     def test_NCBIdf(self):
         config, taxid_dict, dir_vars = directoryUtility.config_initialization()
         test_fpath = "{0}/NCBI_alignments/2629.fasta".format(dir_vars["allNCBI_parent"])
-        test_df = NCBIfilter.NCBI_fasta_df(test_fpath,taxid_dict)
+        test_df = NCBIfilter.load_NCBI_fasta_df(test_fpath,taxid_dict)
         self.assertTrue('ANJ16998.1' in test_df.index)
         self.assertFalse('Urocitellus parryii kodiacensis' in test_df["species_name"].unique())
         self.assertTrue('Urocitellus parryii' in test_df["species_name"].unique())
@@ -190,6 +191,15 @@ class NCBIfilterTest(unittest.TestCase):
         self.assertTrue(len(filt_df)==51)
         self.assertFalse(9785 in filt_df['NCBI_taxid'].unique())
         self.assertTrue(143302 in filt_df['NCBI_taxid'].unique())
+
+
+
+
+
+####
+####
+####
+
 
 
 

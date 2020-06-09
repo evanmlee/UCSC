@@ -111,9 +111,9 @@ def directory_variables(config):
     orthologs_parent = "NCBI_orthologs"
     orthologs_aa_seq, orthologs_nuc_seq = "{0}/AA".format(orthologs_parent), "{0}/Nuc".format(orthologs_parent)
     combined_run = "{0}/{1}/{2}".format(combined_parent, dataset_identifier, run_name)
-    UCSC_raw_parent = "{0}/{1}".format(reorg_parent, dataset_identifier)
-    xref_summary = "{0}/xref_summary_{1}".format(reorg_parent, dataset_name)
-    xref_xml = "{0}/xref_xml".format(reorg_parent)
+    UCSC_raw_parent = "{0}/{1}/all".format(reorg_parent, dataset_identifier)
+    xref_summary = "xref/summary_{1}".format(reorg_parent, dataset_name)
+    xref_xml = "xref/xml".format(reorg_parent)
     allNCBI_parent = "{0}/allNCBI".format(combined_run)
     bestNCBI_parent = "{0}/bestNCBI".format(combined_run)
     summary_run = "summary/{0}/{1}".format(dataset_identifier,run_name)

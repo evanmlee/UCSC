@@ -8,6 +8,8 @@ import re
 from collections import OrderedDict
 import warnings
 
+from utility.directoryUtility import taxid_dict,dir_vars, create_directory
+
 ###Record Filtering###
 
 def ordered_record_generator(fpath,ordered_ids):
@@ -337,7 +339,7 @@ def align_df_to_srs(align_df):
 
 ###Fasta File into record DataFrame objects; parses description fields into species_name, taxid; indexed by record_id###
 
-def NCBI_fasta_df(fasta_inpath,taxid_dict=None):
+def load_NCBI_fasta_df(fasta_inpath,taxid_dict=None):
     #Dictionary of species name to tax_id
     if not taxid_dict:
         taxid_dict = table_taxid_dict
@@ -345,7 +347,7 @@ def NCBI_fasta_df(fasta_inpath,taxid_dict=None):
     exact_spec_name_re = "({0})".format("|".join(spec_names))
     spec_name_dict = dict(zip(spec_names,tids))
     fastas = SeqIO.parse(fasta_inpath,format='fasta')
-    column_list = ["description","species_name","NCBI_taxid","length","sequence"]
+    column_list = ["source_db","description","species_name","NCBI_taxid","length","sequence"]
     fasta_df = pd.DataFrame(columns=column_list)
     for fasta in fastas:
         ncbi_row = parse_NCBI_row(fasta,exact_spec_name_re,spec_name_dict)
@@ -359,7 +361,7 @@ def parse_NCBI_row(fasta,exact_spec_name_re,spec_name_dict):
     :param exact_spec_name_re: regular expression pattern matching all species names in spec_name_dict
     :return: ncbi_row: pandas Series object with populated record information fields
     """
-    column_list = ["description", "species_name", "NCBI_taxid", "length", "sequence"]
+    column_list = ["source_db","description", "species_name", "NCBI_taxid", "length", "sequence"]
     desc_remaining = re.search("{0}(.*)".format(fasta.id), fasta.description).groups()[0]
     if desc_remaining:
         desc_remaining = desc_remaining.strip()
@@ -381,13 +383,13 @@ def parse_NCBI_row(fasta,exact_spec_name_re,spec_name_dict):
             taxid = spec_name_dict[spec_name]
     else:
         spec_name,taxid = "",""
-    row_vals = [desc_remaining, spec_name, taxid, fasta_length, fasta_seq]
+    row_vals = ["NCBI",desc_remaining, spec_name, taxid, fasta_length, fasta_seq]
     row = dict(zip(column_list, row_vals))
     return pd.Series(data=row,name=fasta.id)
 
-def UCSC_fasta_df(fasta_inpath):
+def load_UCSC_fasta_df(fasta_inpath):
     fastas = SeqIO.parse(fasta_inpath, format='fasta')
-    column_list = ["description", "species_name", "NCBI_taxid", "length","sequence"]
+    column_list = ["source_db","description", "species_name", "NCBI_taxid", "length","sequence"]
     fasta_df = pd.DataFrame(columns=column_list)
     for i,fasta in enumerate(fastas):
         ucsc_row = parse_UCSC_row(fasta)
@@ -430,7 +432,7 @@ def partition_UCSC_by_position(fasta_df,low=0,high=100):
 
 
 def parse_UCSC_row(fasta):
-    column_list = ["description", "species_name", "NCBI_taxid","length", "sequence"]
+    column_list = ["source_db","description", "species_name", "NCBI_taxid","length", "sequence"]
     desc_remaining = re.search("{0}(.*)".format(fasta.id), fasta.description).groups()[0].strip()
     # Remove UCSC specific stop character (Z at last position)
     fasta_seq = str(fasta.seq)[:-1]
@@ -444,7 +446,7 @@ def parse_UCSC_row(fasta):
     tax_table_row = ucsc_tax_table.loc[ucsc_tax_table['fasta_handle']==fasta_handle,:]
 
     spec_name, ncbi_taxid = tax_table_row['tax_name'].iloc[0], tax_table_row['NCBI_taxid'].iloc[0]
-    row_vals = [desc_remaining, spec_name, ncbi_taxid,fasta_length, fasta_seq]
+    row_vals = ["UCSC",desc_remaining, spec_name, ncbi_taxid,fasta_length, fasta_seq]
     row = dict(zip(column_list, row_vals))
     return pd.Series(data=row,name=fasta.id)
 
@@ -454,7 +456,7 @@ def load_UCSC_NCBI_df(combined_fpath,ncbi_taxid_dict={},UCSC_subset=[],NCBI_subs
     tids, spec_names = list(ncbi_taxid_dict.keys()),[ncbi_taxid_dict[k] for k in ncbi_taxid_dict]
     exact_spec_name_re = "({0})".format("|".join(spec_names))
     spec_name_dict = dict(zip(spec_names, tids))
-    column_list = ["description", "species_name", "NCBI_taxid", "length", "sequence"]
+    column_list = ["source_db","description", "species_name", "NCBI_taxid", "length", "sequence"]
     fasta_df = pd.DataFrame(columns=column_list)
 
     fastas = SeqIO.parse(combined_fpath, format='fasta')
@@ -487,6 +489,29 @@ def load_NCBI_tax_table(tsv_fpath="config/NCBI_analysis_tax.txt"):
     tax_table = pd.read_csv(tsv_fpath,sep='\t',index_col='spec_id')
     table_taxid_dict = {row['NCBI_taxid']: row['spec_name'] for i, row in tax_table.iterrows()}
     return tax_table, table_taxid_dict
+
+def write_clade_filtered_raw_ucsc(ucsc_tid,ucsc_clade='boreoeutheria',raw_ucsc_fpath="",overwrite=False):
+
+    reorg_parent, ds_id = dir_vars['reorg_parent'], dir_vars['dataset_identifier']
+    if not raw_ucsc_fpath:
+        raw_ucsc_fpath = "{0}/{1}/all/{2}.fasta".format(reorg_parent,ds_id,ucsc_tid)
+    clade_generator = UCSC_subtax_generator(raw_ucsc_fpath, ucsc_clade)
+    clade_data_dir = "{0}/{1}/{2}".format(reorg_parent,ds_id,ucsc_clade)
+    clade_filt_fpath = "{0}/{1}.fasta".format(clade_data_dir,ucsc_tid)
+    if not os.path.exists(clade_filt_fpath) or overwrite:
+        SeqIO.write(clade_generator, clade_filt_fpath, 'fasta')
+
+def write_all_clade_filtered_tids(ucsc_clade='boreoeutheria',overwrite=False):
+    from query.orthologUtility import load_NCBI_xref_table
+    reorg_parent, ds_id = dir_vars['reorg_parent'], dir_vars['dataset_identifier']
+    clade_data_dir = "{0}/{1}/{2}".format(reorg_parent, ds_id, ucsc_clade)
+    create_directory(clade_data_dir)
+
+    xref_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
+    xref_df = load_NCBI_xref_table(xref_fpath)
+    for ucsc_tid in xref_df.index:
+        write_clade_filtered_raw_ucsc(ucsc_tid,ucsc_clade=ucsc_clade,overwrite=overwrite)
+
 
 ucsc_tax_table = load_UCSC_tax_table()
 ncbi_tax_table, table_taxid_dict = load_NCBI_tax_table()

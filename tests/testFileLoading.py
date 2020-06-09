@@ -31,20 +31,22 @@ class FastaDataFrameTest(unittest.TestCase):
         self.assertTrue(len(df)==101)
         self.assertFalse('XP_015337450.1' in df.index)
 
+        display(df)
+
         #Test taxid_dict doesn't correspond to table file in config, should cause filtering even if ncbi_subset not provided
         test_tid_dict = {9999:'Urocitellus parryii'}
         df = fastaUtility.load_UCSC_NCBI_df(test_fpath,ncbi_taxid_dict=test_tid_dict)
 
     def test_UCSC_df(self):
-        test_path = "reorganized_data/hg38AA_knownCanonical/ENST00000002596.6.fasta"
-        df = fastaUtility.UCSC_fasta_df(test_path)
+        test_path = "reorganized_data/hg38AA_knownCanonical/all/ENST00000002596.6.fasta"
+        df = fastaUtility.load_UCSC_fasta_df(test_path)
         self.assertTrue(df.index.name == 'record_id')
         self.assertTrue(len(df)==100)
         self.assertTrue(len(df['NCBI_taxid'].dropna()) == 100)
 
     def test_tax_partitions(self):
-        ucsc_test_path = "reorganized_data/hg38AA_knownCanonical/ENST00000002596.6.fasta"
-        df = fastaUtility.UCSC_fasta_df(ucsc_test_path)
+        ucsc_test_path = "reorganized_data/hg38AA_knownCanonical/all/ENST00000002596.6.fasta"
+        df = fastaUtility.load_UCSC_fasta_df(ucsc_test_path)
         bor_df,rest_df = fastaUtility.partition_UCSC_by_clade(df,'boreoeutheria')
         self.assertTrue("Condylura cristata" in bor_df["species_name"].unique())
         self.assertFalse("Condylura cristata" in rest_df["species_name"].unique())
@@ -67,7 +69,7 @@ class FastaDataFrameTest(unittest.TestCase):
     def test_parse_NCBI_df_unformatted_fasta(self):
         from utility.directoryUtility import taxid_dict
         test_fpath = "tests/test_data/best_raw/ENST00000236850.4.fasta"
-        ncbi_df = fastaUtility.NCBI_fasta_df(test_fpath,taxid_dict)
+        ncbi_df = fastaUtility.load_NCBI_fasta_df(test_fpath,taxid_dict)
         with pd.option_context('display.max_columns',None):
             display(ncbi_df)
 

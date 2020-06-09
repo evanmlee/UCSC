@@ -6,46 +6,31 @@ from IPython.display import display
 
 from utility import fastaUtility as fautil, UCSCerrors
 from utility import NCBIfilter as filt
-from utility.directoryUtility import taxid_dict,dir_vars
+from utility.directoryUtility import taxid_dict,dir_vars,ucsc_taxid_dict
 from utility.NCBIfilter import CLOSEST_EVO_TAXIDS, SECONDARY_EVO_TAXIDS
 
-
-
-def drop_NCBI_species_from_UCSC_records(combined_records_df,ncbi_idx,analysis_taxid_dict):
+def drop_NCBI_species_from_UCSC_records(filtered_ucsc,analysis_taxid_dict):
     """Drops UCSC record data for any species tax_ids represented in analysis_taxid_dict.
-
     :param combined_records_df: Records DataFrame containing UCSC record data and NCBI record(s)
     :param ncbi_idx: Corresponds to NCBI species being used for analysis
     :param analysis_taxid_dict: Dictionary with NCBI taxids of analysis species as keys. UCSC records with any taxids
     in this set will be excluded from the UCSC used as the outgroup in analysis
     :return: filtered: combined_records_df with UCSC records corresponding to analysis_taxids removed
     """
-    ncbi_partition = (combined_records_df.index.isin(ncbi_idx)) & ~(combined_records_df.index.str.contains("ENST"))
-    filtered_ucsc, ncbi_df = combined_records_df.loc[~ncbi_partition,:],combined_records_df.loc[ncbi_partition,:]
     for drop_taxid in analysis_taxid_dict:
         filtered_ucsc = filtered_ucsc.loc[filtered_ucsc['NCBI_taxid']!=drop_taxid,:]
-    filtered = filtered_ucsc.append(ncbi_df)
-    return filtered
+    return filtered_ucsc
 
-def drop_redundant_UCSC_records(combined_records_df,ncbi_idx):
-    """For a given NCBI taxid, exclude UCSC from uniqueness/ conservation analysis from species which are either
-    identical or close evolutionary relatives that likely contain similar adaptive residues to ncbi_taxid species
-    (i.e. 13LGS and AGS). If provided NCBI taxids ar not in DROPPED_TAXIDS, returns unfilte
-    :param combined_records_df: Records DataFrame containing UCSC record data and NCBI record(s)
-    :param ncbi_idx: Index or index value that corresponds to NCBI species for analysis.
+def drop_ucsc_analysis_species(filtered_ucsc):
+    """ Drops UCSC data for species in [UCSC_TAXONOMY] section of config.txt from the mammalian outgroup DataFrame.
+    :param filtered_ucsc: Mammalian outgroup DataFrame (test record should have been removed in filter_analysis_subset)
+    :return: filtered_ucsc: corresponding DataFrame with UCSC analysis species removed
     """
-    DROPPED_TAXIDS = {9999:[43179],10181:[10181]}
-    ncbi_taxids = combined_records_df.loc[ncbi_idx,'NCBI_taxid']
-    ncbi_partition = (combined_records_df.index.isin(ncbi_idx)) & ~(combined_records_df.index.str.contains("ENST"))
-    filtered_ucsc, ncbi_df = combined_records_df.loc[~ncbi_partition, :], combined_records_df.loc[ncbi_partition, :]
-    for ncbi_taxid in ncbi_taxids:
-        if ncbi_taxid in DROPPED_TAXIDS:
-            dropped_set = DROPPED_TAXIDS[ncbi_taxid]
-            filtered_ucsc = filtered_ucsc.loc[~filtered_ucsc['NCBI_taxid'].isin(dropped_set),:]
-    filtered = filtered_ucsc.append(ncbi_df)
-    return filtered
+    for drop_taxid in ucsc_taxid_dict:
+        filtered_ucsc = filtered_ucsc.loc[filtered_ucsc['NCBI_taxid'] != drop_taxid, :]
+    return filtered_ucsc
 
-def drop_incomplete_records(combined_records_df, ncbi_idx,length_thresh=0.7, how='ncbi'):
+def drop_incomplete_records(ucsc_df, test_df,length_thresh=0.7, how='test_record'):
     """Applies a length filter to combined_records_df and drops UCSC records which have length less than accepted record
     lengths multiplied by length_thresh.
 
@@ -57,38 +42,68 @@ def drop_incomplete_records(combined_records_df, ncbi_idx,length_thresh=0.7, how
                 'nonzero_evo': Uses non-zero evolutionary relative. If none, auto defaults to ncbi record length
     :return:
     """
-    accepted_how_values = ['ncbi','nonzero_ucsc','nonzero_evo']
-    ncbi_partition = (combined_records_df.index.isin(ncbi_idx)) & ~(combined_records_df.index.str.contains("ENST"))
-    ucsc_df, ncbi_df = combined_records_df.loc[~ncbi_partition, :], combined_records_df.loc[ncbi_partition, :]
-    if how == 'ncbi':
-        accepted_records = ncbi_df.index
+    accepted_how_values = ['test_record','nonzero_ucsc','nonzero_evo']
+    if how == 'test_record':
+        accepted_records = test_df.index
+        accepted_med_len = np.median(test_df.loc[accepted_records, 'length'])
     elif how == 'nonzero_ucsc':
         non_zero_ucsc = ucsc_df.loc[ucsc_df['length'] > 0, :]
         accepted_records = non_zero_ucsc.index
+        accepted_med_len = np.median(ucsc_df.loc[accepted_records, 'length'])
     elif how == 'nonzero_evo':
-        ncbi_taxid = ncbi_df["NCBI_taxid"].iloc[0]
+        ncbi_taxid = test_df["NCBI_taxid"].iloc[0]
         evo_taxids = [CLOSEST_EVO_TAXIDS[ncbi_taxid]] + SECONDARY_EVO_TAXIDS[ncbi_taxid]
         evo_ucsc = ucsc_df.loc[ucsc_df['NCBI_taxid'].isin(evo_taxids),:]
         nonzero_evo = evo_ucsc.loc[evo_ucsc['length']> 0,:]
         if len(nonzero_evo) > 0:
             accepted_records = nonzero_evo.index
+            accepted_med_len = np.median(ucsc_df.loc[accepted_records, 'length'])
         else:
-            accepted_records = ncbi_df.index
+            accepted_records = test_df.index
+            accepted_med_len = np.median(test_df.loc[accepted_records, 'length'])
     else:
         raise ValueError("how must use values in accepted values: {0}".format((accepted_how_values)))
-    accepted_med_len = np.median(combined_records_df.loc[accepted_records,'length'])
     cutoff_length = accepted_med_len*length_thresh
     filtered_ucsc_df = ucsc_df.loc[ucsc_df['length']>=cutoff_length,:]
-    filtered = filtered_ucsc_df.append(ncbi_df)
-    return filtered
+    return filtered_ucsc_df
+
+def filter_ucsc_df(fasta_fpath,ucsc_df,test_df,drop_ucsc_analysis_specs=True,drop_ncbi_from_ucsc=True,drop_incomplete=True):
+    """
+    :param fasta_fpath:
+    :param ucsc_df: Unfiltered mammalian outgroup df.
+    :param test_df:
+    :param drop_ucsc_analysis_specs: Default True. Drops UCSC data for species in [UCSC_TAXONOMY] section of config.txt
+    from the mammalian outgroup
+    :param drop_ncbi_from_ucsc: Default True. Drops UCSC data corresponding to any species in the NCBI analysis set
+    (i.e. if heterocephalus glaber is in NCBI species set, corresponding UCSC hetGla records will be dropped from
+    outgroup for all NCBI analysis species).
+    :param drop_incomplete: Default True. Applies length filter to UCSC records and drops any record below length
+    threshold (determined by 80% of NCBI record length by default)
+    :return:
+    """
+    if drop_ucsc_analysis_specs:
+        ucsc_df = drop_ucsc_analysis_species(ucsc_df)
+    if drop_ncbi_from_ucsc:
+        ucsc_df = drop_NCBI_species_from_UCSC_records(ucsc_df,taxid_dict)
+    if drop_incomplete:
+        ucsc_df = drop_incomplete_records(ucsc_df,test_df, how='nonzero_ucsc')
+    if len(ucsc_df) == 0:
+        emsg = "{0}".format("Analysis records filtering resulted in empty outgroup set.")
+        raise UCSCerrors.SequenceAnalysisError(0,emsg)
+    elif len(ucsc_df)< 5:
+        wmsg = "Fewer than 5 records in outgroup dataset after filtering from {0}".format(fasta_fpath)
+        warnings.warn(wmsg,RuntimeWarning)
+    return ucsc_df
     
-def filter_analysis_subset(combined_fasta,records_tsv_fpath,UCSC_analysis_subset=[],NCBI_record_subset=[],
-                           filtered_outpath="tmp/filtered_analysis_set.fasta",taxid_dict=taxid_dict,
-                           drop_redundant=True,drop_ncbi_from_ucsc=True,drop_incomplete=True):
+def filter_analysis_subset(fasta_fpath,records_tsv_fpath,test_taxid,test_source="UCSC",UCSC_analysis_subset=[],
+                           NCBI_record_subset=[],
+                           filtered_outpath="tmp/filtered_analysis_set.fasta",drop_ucsc_analysis_specs=True,
+                           drop_ncbi_from_ucsc=True,drop_incomplete=True):
     """Given subsets of UCSC and NCBI records to include in conservation_analysis, writes filtered sequence data to
     filtered_outpath and returns a DataFrame with filtered record information and the path to the sequence file.
 
-    :param combined_fasta: bestNCBI alignment containing both all UCSC data and available selected NCBI records
+    :param fasta_fpath: bestNCBI alignment containing both all UCSC data and available selected NCBI records, or
+            clade-filtered UCSC data if test_taxid corresponds to a UCSC data species
     :param records_tsv_fpath: File path to for which analysis record subset information will be written
     :param UCSC_analysis_subset: If provided, limits UCSC records to those ids in UCSC_record_subset
     :param NCBI_record_subset: If provided, limits NCBI records to those ids in NCBI_record_subset
@@ -106,25 +121,20 @@ def filter_analysis_subset(combined_fasta,records_tsv_fpath,UCSC_analysis_subset
     :return: records_df: DataFrame containing record information represented in filtered sequence set
     :return: filtered_outpath: Outpath to which filtered records were written
     """
-
-    records_df = fautil.load_UCSC_NCBI_df(combined_fasta,ncbi_taxid_dict=taxid_dict,
+    if test_source == "UCSC":
+        records_df = fautil.load_UCSC_fasta_df(fasta_fpath)
+        test_partition = (records_df["NCBI_taxid"]==test_taxid)
+    else:
+        records_df = fautil.load_UCSC_NCBI_df(fasta_fpath,ncbi_taxid_dict=taxid_dict,
                                          UCSC_subset=UCSC_analysis_subset,NCBI_subset=NCBI_record_subset)
-    ncbi_idx = records_df.loc[~records_df.index.str.contains("ENST"),:].index
-    if drop_redundant:
-        records_df = drop_redundant_UCSC_records(records_df,ncbi_idx)
-    if drop_ncbi_from_ucsc:
-        records_df = drop_NCBI_species_from_UCSC_records(records_df,ncbi_idx,taxid_dict)
-    if drop_incomplete:
-        records_df = drop_incomplete_records(records_df,ncbi_idx,how='nonzero_ucsc')
-    if len(records_df) == len(ncbi_idx) or len(records_df) == 1:
-        emsg = "{0}".format("Analysis records filtering resulted in empty outgroup set.")
-        raise UCSCerrors.SequenceAnalysisError(0,emsg)
-    elif len(records_df.drop(index=NCBI_record_subset)) < 5:
-        wmsg = "Fewer than 5 records in outgroup dataset after filtering from {0}".format(combined_fasta)
-        warnings.warn(wmsg,RuntimeWarning)
+        test_partition = (~records_df.index.str.contains("ENST")) & (records_df["NCBI_taxid"]==test_taxid)
+    outgroup_ucsc_df,test_df = records_df.loc[~test_partition],records_df.loc[test_partition,:]
+    filtered_ucsc = filter_ucsc_df(fasta_fpath,outgroup_ucsc_df,test_df,
+                                   drop_ucsc_analysis_specs,drop_ncbi_from_ucsc,drop_incomplete)
+    records_df = filtered_ucsc.append(test_df)
     records_df.drop(columns=['sequence'],inplace=True)
     records_df.to_csv(records_tsv_fpath,sep='\t')
-    fautil.filter_fasta_infile(records_df.index,combined_fasta,outfile_path=filtered_outpath)
+    fautil.filter_fasta_infile(records_df.index,fasta_fpath,outfile_path=filtered_outpath)
     return records_df, filtered_outpath
 
 def id_length_check(combined_fasta_fpath,lm_row,check_taxids,len_tol=0.05,min_id_tol=0.15,max_id_tol=0.3,
