@@ -14,13 +14,13 @@ TEST_ANALYSIS_DICT = {9999: 'Urocitellus parryii', 10181: 'Heterocephalus glaber
 
 class ConservationTest(unittest.TestCase):
 
-    def test_exon_diff_splitting(self):
+    def test_indel_exon_diff_splitting(self):
         from utility.directoryUtility import taxid_dict,dir_vars
         bestncbi_parent = dir_vars['bestNCBI_parent']
         #Test tail insertion
         test_fpath = "{0}/combined/9994/ENST00000371274.8.fasta".format(bestncbi_parent)
-        test_records_fpath = "tmp/ENST00000371274.8_records.tsv"
-        records_df, filtered_outpath = ar_filt.filter_analysis_subset(test_fpath,test_records_fpath)
+        test_records_fpath = "tests/tmp/ENST00000371274.8_records.tsv"
+        records_df, filtered_outpath = ar_filt.filter_analysis_subset(test_fpath,test_records_fpath,9994,test_source="NCBI")
         ncbi_record_id = records_df.loc[~records_df.index.str.contains("ENST"),:].index[0]
         align_df = fautil.align_fasta_to_df(filtered_outpath, ucsc_flag=True)
         unique_thresh = 1
@@ -34,8 +34,8 @@ class ConservationTest(unittest.TestCase):
         self.assertTrue(exon_diffs[-1] == 569)
 
         test_fpath = "{0}/combined/9994/ENST00000003583.12.fasta".format(bestncbi_parent)
-        test_records_fpath = "tmp/ENST00000003583.12_records.tsv"
-        records_df, filtered_outpath = ar_filt.filter_analysis_subset(test_fpath, test_records_fpath)
+        test_records_fpath = "tests/tmp/ENST00000003583.12_records.tsv"
+        records_df, filtered_outpath = ar_filt.filter_analysis_subset(test_fpath, test_records_fpath,9994,test_source="NCBI")
         ncbi_record_id = records_df.loc[~records_df.index.str.contains("ENST"), :].index[0]
         align_df = fautil.align_fasta_to_df(filtered_outpath, ucsc_flag=True)
         unique_thresh = 1
@@ -47,26 +47,48 @@ class ConservationTest(unittest.TestCase):
         self.assertTrue(26 not in exon_diffs)
         self.assertTrue(38 not in exon_diffs)
 
+    def test_single_unique_identification(self):
+        from utility.directoryUtility import taxid_dict,dir_vars
+        bestncbi_parent = dir_vars['bestNCBI_parent']
+        test_fpath = "{0}/combined/9994/ENST00000371274.8.fasta".format(bestncbi_parent)
+        test_records_fpath = "tests/tmp/ENST00000371274.8_records.tsv"
+
+        records_df, filtered_outpath = ar_filt.filter_analysis_subset(test_fpath, test_records_fpath, 9994,
+                                                                      test_source="NCBI")
+        ncbi_record_id = records_df.loc[~records_df.index.str.contains("ENST"), :].index[0]
+        align_df = fautil.align_fasta_to_df(filtered_outpath, ucsc_flag=True)
+        unique_thresh = 1
+        uniques = ac.find_uniques(align_df, unique_thresh, ncbi_record_id)
+
+        single_unique_pos = ac.id_single_uniques(uniques)
+        for test_pos in [206,341,345,373]:
+            self.assertTrue(test_pos not in single_unique_pos)
+
+        filt_uni, exon_diff = ac.filter_uniques(uniques,ncbi_record_id,unique_thresh,how='single_only')
+        display(filt_uni)
+
     def test_filter_uniques(self):
         from utility.directoryUtility import taxid_dict, dir_vars
         bestncbi_parent = dir_vars['bestNCBI_parent']
         # Test tail insertion
         test_fpath = "{0}/combined/9994/ENST00000371274.8.fasta".format(bestncbi_parent)
         test_records_fpath = "tmp/ENST00000371274.8_records.tsv"
-        records_df, filtered_outpath = ar_filt.filter_analysis_subset(test_fpath, test_records_fpath)
+        records_df, filtered_outpath = ar_filt.filter_analysis_subset(test_fpath, test_records_fpath,test_taxid=9994,test_source="NCBI")
         ncbi_record_id = records_df.loc[~records_df.index.str.contains("ENST"), :].index[0]
         align_df = fautil.align_fasta_to_df(filtered_outpath, ucsc_flag=True)
         unique_thresh = 1
         uniques = ac.find_uniques(align_df, unique_thresh, ncbi_record_id)
-        filt_uniques, exon_diffs = ac.filter_exon_diffs(uniques,ncbi_record_id,unique_thresh)
+        filt_uniques, exon_diffs = ac.filter_exon_diffs(uniques,ncbi_record_id,unique_thresh,how='indel')
         self.assertTrue(115 in filt_uniques.columns)
         self.assertTrue(205 in filt_uniques.columns)
         self.assertTrue(373 not in filt_uniques.columns)
         # with pd.option_context('display.max_columns',None):
         #     print("Filtered unique positions")
         #     display(filt_uniques)
-        # print("Exon differences")
-        # display(exon_diffs)
+        print("Exon differences")
+        display(exon_diffs)
+
+        filt_uniques, exon_diffs = ac.filter_exon_diffs(uniques, ncbi_record_id, unique_thresh, how='all')
 
 
     def test_gene_summary(self):
@@ -88,14 +110,13 @@ class ConservationTest(unittest.TestCase):
 
         boreo_df, rest_df = fautil.partition_UCSC_by_clade(combined_fasta_df, 'boreoeutheria')
         UCSC_test_subset = boreo_df.index
-        records_df, filtered_aln_path = ar_filt.filter_analysis_subset(test_combined_fpath, test_out_records_fpath,
-                                                                       UCSC_test_subset,
-                                                                       NCBI_record_subset=ncbi_idx,
-                                                                       taxid_dict=TEST_ANALYSIS_DICT, drop_redundant=True,
-                                                                       drop_ncbi_from_ucsc=True)
+        records_df, filtered_aln_path = ar_filt.filter_analysis_subset(test_combined_fpath, test_out_records_fpath,9994,
+                                                                       test_source="NCBI",UCSC_analysis_subset=UCSC_test_subset,
+                                                                       NCBI_record_subset=ncbi_idx)
         align_df = fautil.align_fasta_to_df(filtered_aln_path,ucsc_flag=True)
         summary_df = cs.gene_summary_table(align_df, ncbi_idx, blos_df,tid_summary_dict,tid,unique_thresh=1,
                                         use_jsd_gap_penalty=True)
+
         # self.assertTrue(len(summary_df.loc[summary_df['NCBI Variant Count']==1])==len(summary_df))
         # self.assertTrue(227 in summary_df.index)
         # self.assertTrue(summary_df['Test-Outgroup BLOSUM62'].count() == 1)

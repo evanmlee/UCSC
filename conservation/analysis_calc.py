@@ -58,13 +58,26 @@ def indel_postiions(uniques,test_idx,unique_thresh):
     indel_cols = uniques.loc[:,indel_pos]
     return indel_cols
 
-def id_exon_diffs(indel_cols, INDEL_THRESH=5):
+def id_single_uniques(uniques):
+    unique_pos = uniques.columns
+    single_uniques = []
+    for idx,pos in enumerate(unique_pos):
+        prev_idx,next_idx = idx-1,idx+1
+        if (prev_idx >= 0 and unique_pos[prev_idx] == pos-1) or \
+            (next_idx < len(unique_pos) and unique_pos[next_idx] == pos+1):
+            continue
+        else:
+            single_uniques.append(pos)
+    return single_uniques
+
+def id_exon_diffs(uniques, LENGTH_THRESH=5):
     """Given a DataFrame of indel positions from align_df, identify exon_diffs as continuous stretches of at least
     INDEL_THRESH positions of adjacent indel positions.
 
-    :param indel_cols: DataFrame of align_df columns corresponding to unique positions where test variant is '-' or
+    :param uniques: DataFrame of align_df columns corresponding to unique positions where test variant is '-' or
     outgroup variant is unviersally '-'
     :param INDEL_THRESH: int, threshold length for continuous stretches of indel positions to be returned.
+    :param
     :return: exon_diffs, positions corresponding to continuous indel stretches as defined above.
     """
     # Iterate over all gap positions:
@@ -73,42 +86,52 @@ def id_exon_diffs(indel_cols, INDEL_THRESH=5):
     # if so: continue checking sequential positions until non-sequential gap.
     # if not: move on to i+1 gap position
     #Side not i am so sorry if you are trying to read this function.
-    indel_positions = indel_cols.columns
+    unique_positions = uniques.columns
     exon_diffs = []
-    for iter_idx in range(len(indel_positions) - 4):
-        curr_gap = indel_positions[iter_idx]
-        check_gap = indel_positions[iter_idx + 4]
-        if curr_gap in exon_diffs:
+    len_adjust = LENGTH_THRESH-1
+    for iter_idx in range(len(unique_positions) - len_adjust):
+        curr_pos = unique_positions[iter_idx]
+        check_gap = unique_positions[iter_idx + len_adjust]
+        if curr_pos in exon_diffs:
             continue
-        elif check_gap == curr_gap + 4:
-            if iter_idx + 5 == len(indel_positions):
-                prev_gap = check_gap
+        elif check_gap == curr_pos + len_adjust:
+            if iter_idx + LENGTH_THRESH == len(unique_positions):
+                prev_pos = check_gap
             else:
-                for check_idx in range(iter_idx + 5, len(indel_positions)):
-                    prev_gap = check_gap
-                    check_gap = indel_positions[check_idx]
-                    if check_gap == prev_gap + 1:
-                        if check_idx == len(indel_positions) - 1:
-                            prev_gap = check_gap
+                for check_idx in range(iter_idx + LENGTH_THRESH, len(unique_positions)):
+                    prev_pos = check_gap
+                    check_gap = unique_positions[check_idx]
+                    if check_gap == prev_pos + 1:
+                        if check_idx == len(unique_positions) - 1:
+                            prev_pos = check_gap
                         continue
                     else:
                         break
-            for gap in range(curr_gap, prev_gap + 1):
+            for gap in range(curr_pos, prev_pos + 1):
                 exon_diffs.append(gap)
         else:
             continue
     return exon_diffs
 
-def filter_exon_diffs(uniques,test_species_idx,unique_thresh):
+def filter_uniques(uniques,test_species_idx,unique_thresh,how='single_only'):
     """For a series of unique positions in align_df, split into exon differences (insertion or deletion stretches >=5
     aa) and unique substitutions (everything else).
     :param uniques:
     :param test_species_idx:
+    :param unique_thresh
+    :param how: 'all' or 'indel', all - any stretch of unique positions
     :return:
     """
-    indel_cols = indel_postiions(uniques,test_species_idx,unique_thresh)
-    exon_diff_pos = id_exon_diffs(indel_cols)
-    filt_uniques, exon_diffs = uniques.drop(columns=exon_diff_pos),uniques.loc[:,exon_diff_pos ]
+    if how == 'indel_stretch':
+        indel_cols = indel_postiions(uniques,test_species_idx,unique_thresh)
+        exon_diff_pos = id_exon_diffs(indel_cols)
+        filt_uniques, exon_diffs = uniques.drop(columns=exon_diff_pos), uniques.loc[:, exon_diff_pos]
+    elif how == 'unique_stretch':
+        exon_diff_pos = id_exon_diffs(uniques,LENGTH_THRESH=3)
+        filt_uniques, exon_diffs = uniques.drop(columns=exon_diff_pos), uniques.loc[:, exon_diff_pos]
+    elif how == 'single_only':
+        single_unique_pos = id_single_uniques(uniques)
+        filt_uniques, exon_diffs = uniques.loc[:, single_unique_pos],uniques.drop(columns=single_unique_pos)
     return filt_uniques, exon_diffs
 
 

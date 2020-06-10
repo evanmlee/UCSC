@@ -45,7 +45,7 @@ def gene_summary_table(align_df, test_idx,blos_df, tid_summary_dir,tid,unique_th
     if type(unique_thresh) == float and unique_thresh < 1:
         unique_thresh = max(int(len(align_df) * unique_thresh), 1)
     uniques  = ac.find_uniques(align_df,unique_thresh,test_idx)
-    filt_uniques, exon_diffs = ac.filter_exon_diffs(uniques,test_idx,unique_thresh)
+    filt_uniques, exon_diffs = ac.filter_uniques(uniques,test_idx,unique_thresh,how='single_only')
     if write_tables and len(exon_diffs.columns) > 0:
         exon_diffs_fpath = "{0}/{1}_exondiffs.tsv".format(tid_summary_dir,tid)
         write_exon_diffs_table(align_df,exon_diffs,test_idx,exon_diffs_fpath)
@@ -182,9 +182,8 @@ def overall_summary_table(xref_table,
                     try:
                         dirutil.create_directory(tid_subdir)
                         records_df, filtered_aln_path = ar_filt.filter_analysis_subset(combined_fasta_fpath,out_records_fpath,
-                                                                UCSC_analysis_subset=ucsc_analysis_subset,NCBI_record_subset=ncbi_idx,
-                                                                taxid_dict=taxid_dict,drop_redundant=True,
-                                                                      drop_ncbi_from_ucsc=True)
+                                                                ncbi_taxid,test_source="NCBI",
+                                                                UCSC_analysis_subset=ucsc_analysis_subset,NCBI_record_subset=ncbi_idx)
                         align_df = fasta.align_fasta_to_df(filtered_aln_path,ucsc_flag=True)
                         summary_df = gene_summary_table(align_df,ncbi_idx,blos_df,tid_subdir,tid,write_tables=True,
                                                         use_jsd_gap_penalty=use_jsd_gap_penalty)
@@ -377,7 +376,7 @@ def main():
     xref_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
     xref_df = orutil.load_NCBI_xref_table(xref_fpath)
     length_checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
-    # overall_summary_table(xref_df, length_checks_fpath=length_checks_fpath,skip_overall=False)
+    overall_summary_table(xref_df, length_checks_fpath=length_checks_fpath,skip_overall=True)
     # test_fpath = "{0}/conservation/9994_summary.tsv".format(dir_vars['summary_run'])
     # gene_statistics_table(test_fpath)
 

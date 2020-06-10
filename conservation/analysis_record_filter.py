@@ -124,10 +124,12 @@ def filter_analysis_subset(fasta_fpath,records_tsv_fpath,test_taxid,test_source=
     if test_source == "UCSC":
         records_df = fautil.load_UCSC_fasta_df(fasta_fpath)
         test_partition = (records_df["NCBI_taxid"]==test_taxid)
-    else:
+    elif test_source == "NCBI":
         records_df = fautil.load_UCSC_NCBI_df(fasta_fpath,ncbi_taxid_dict=taxid_dict,
                                          UCSC_subset=UCSC_analysis_subset,NCBI_subset=NCBI_record_subset)
         test_partition = (~records_df.index.str.contains("ENST")) & (records_df["NCBI_taxid"]==test_taxid)
+    else:
+        raise ValueError("Specify test_source as 'UCSC' or 'NCBI'")
     outgroup_ucsc_df,test_df = records_df.loc[~test_partition],records_df.loc[test_partition,:]
     filtered_ucsc = filter_ucsc_df(fasta_fpath,outgroup_ucsc_df,test_df,
                                    drop_ucsc_analysis_specs,drop_ncbi_from_ucsc,drop_incomplete)
