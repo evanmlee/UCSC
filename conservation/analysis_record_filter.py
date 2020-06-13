@@ -136,7 +136,10 @@ def filter_analysis_subset(fasta_fpath,records_tsv_fpath,test_taxid,test_source=
     records_df = filtered_ucsc.append(test_df)
     records_df.drop(columns=['sequence'],inplace=True)
     records_df.to_csv(records_tsv_fpath,sep='\t')
-    fautil.filter_fasta_infile(records_df.index,fasta_fpath,outfile_path=filtered_outpath)
+    if test_source == 'UCSC':
+        fautil.filter_fasta_infile(records_df.index, fasta_fpath, outfile_path=filtered_outpath,ordered=True)
+    else:
+        fautil.filter_fasta_infile(records_df.index,fasta_fpath,outfile_path=filtered_outpath)
     return records_df, filtered_outpath
 
 def id_length_check(combined_fasta_fpath,lm_row,check_taxids,len_tol=0.05,min_id_tol=0.15,max_id_tol=0.3,
@@ -227,6 +230,26 @@ def write_lm_params_file(params):
             fline = "{0}: {1}\n".format(label,val)
             params_f.write(fline)
 
+def length_checks_df(lc_fpath,taxids,check_cols=True):
+    """Reads length checks DataFrame from file if exists, otherwise generates empty DataFrame with columns based
+    on taxids."""
+    check_col_labels = ["{0}_check".format(taxid) for taxid in taxids]
+    if os.path.exists(lc_fpath):
+        check_df = pd.read_csv(lc_fpath,sep='\t',index_col=0)
+        if check_cols:
+            for col in check_df.columns:
+                if col not in check_col_labels:
+                    raise RuntimeError("Column labels for taxids ({0}) do not match columns list at specified file {1}"\
+                                       .format(taxids, lc_fpath))
+            for col in check_col_labels:
+                if col not in check_df.columns:
+                    raise RuntimeError("Column labels for taxids ({0}) do not match columns list at specified file {1}"\
+                                       .format(taxids, lc_fpath))
+    else:
+        check_df = pd.DataFrame(columns=check_col_labels)
+    check_df.index.name = "UCSC_transcript_id"
+    return check_df
+
 
 def length_metric_checks(length_metrics_fpath,len_tol=0.05,min_id_tol=0.15,max_id_tol=0.3,ce_id_adjust=1.25,
                          evo_how='all',pass_how='most',
@@ -261,16 +284,11 @@ def length_metric_checks(length_metrics_fpath,len_tol=0.05,min_id_tol=0.15,max_i
         else:
             raise ValueError("parameter 'evo_how' must be 'all' or 'closest'.")
         evo_taxids[taxid] = check_taxids
-
-    check_col_labels = ["{0}_check".format(taxid) for taxid in taxid_dict]
     checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
     if os.path.exists(checks_fpath) and not recalc_pass_checks:
         return
-    elif os.path.exists(checks_fpath):
-        check_df = pd.read_csv(checks_fpath,sep='\t',index_col=0)
     else:
-        check_df = pd.DataFrame(columns=check_col_labels)
-    check_df.index.name = "UCSC_transcript_id"
+        check_df = length_checks_df(checks_fpath,taxid_dict)
     lm_df,_ = filt.length_metrics_df(length_metrics_fpath,taxid_dict)
     for taxid in taxid_dict:
         tax_length_label = "{0}_ncbi_length".format(taxid)
@@ -320,6 +338,33 @@ def length_metric_checks(length_metrics_fpath,len_tol=0.05,min_id_tol=0.15,max_i
     param_vals = [min_id_tol,max_id_tol,ce_id_adjust,evo_how,pass_how]
     params = dict(zip(param_labels,param_vals))
     write_lm_params_file(params)
+
+
+def ucsc_length_checks(clade_level="boreoeutheria",len_tol=0.7,length_how="non_zero_clade",
+                       recalc_pass_checks=False,alt_ucsc_lc_fpath=""):
+    import query.orthologUtility as orutil
+    any_ncbi_ids = orutil.any_NCBI_xref()
+    reorg_parent, ds_id = dir_vars['reorg_parent'],dir_vars['dataset_identifier']
+    if alt_ucsc_lc_fpath:
+        ucsc_lc_fpath = alt_ucsc_lc_fpath
+    else:
+        ucsc_lc_fpath = "{0}/ucsc_length_checks.tsv".format(dir_vars['combined_run'])
+    ucsc_lc_df = length_checks_df(ucsc_lc_fpath,ucsc_taxid_dict)
+    for ucsc_tid, row in any_ncbi_ids.iterrows():
+        if not (recalc_pass_checks or ucsc_tid not in ucsc_lc_df.index):
+            continue
+        clade_tid_fpath = "{0}/{1}/{2}/{3}.fasta".format(reorg_parent,ds_id,clade_level,ucsc_tid)
+        ucsc_df = fautil.load_UCSC_fasta_df(clade_tid_fpath)
+        if length_how == "non_zero_clade":
+            non_zero_ucsc = ucsc_df.loc[ucsc_df['length'] > 0, :]
+            accepted_records = non_zero_ucsc.index
+            accepted_med_len = np.median(ucsc_df.loc[accepted_records, 'length'])
+        for taxid in ucsc_taxid_dict:
+            check_col = "{0}_check".format(taxid)
+            tax_tid_len = ucsc_df.loc[ucsc_df['NCBI_taxid']==taxid,'length'].iloc[0]
+            ucsc_lc_df.loc[ucsc_tid,check_col] = tax_tid_len >= len_tol*accepted_med_len
+    ucsc_lc_df.to_csv(ucsc_lc_fpath,sep='\t')
+    return ucsc_lc_df
 
 if __name__ == "__main__":
     pd.options.display.max_columns = None

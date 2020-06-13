@@ -73,3 +73,27 @@ def ortholog_na_filter(ortholog_table,how="any",comp=False):
     match_df = boolean_df_agg(ortholog_table, bool_df, how=how, comp=comp)
     return match_df
 
+def any_NCBI_xref(alt_xref_fpath="",alt_ortho_fpath=""):
+    """Returns DataFrame indexed on UCSC transcript ID containing Ensembl stable GeneID, NCBI GID, and HGNC symbol
+    information for all transcript IDs for which at least one NCBI ortholog
+
+    :param alt_xref_fpath:
+    :param alt_ortho_fpath:
+    :return:
+    """
+    from utility.directoryUtility import dir_vars
+    if alt_xref_fpath:
+        xref_fpath = alt_xref_fpath
+    else:
+        xref_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
+    if alt_ortho_fpath:
+        orthologs_fpath = alt_ortho_fpath
+    else:
+        orthologs_fpath = "{0}/orthologs_final.tsv".format(dir_vars['orthologs_parent'])
+    xref_table = load_NCBI_xref_table(xref_fpath)
+    NCBI_gid_table = xref_table.loc[:, ["stable_gene_id", "NCBI_gid", "HGNC_symbol"]]
+
+    ortholog_id_table = load_orthologs_table(orthologs_fpath)
+    non_empty_orthoIDs = ortholog_id_table.dropna(how='all')
+    any_NCBI_IDs = NCBI_gid_table.loc[(NCBI_gid_table["NCBI_gid"].isin(non_empty_orthoIDs.index.astype(str))), :]
+    return any_NCBI_IDs

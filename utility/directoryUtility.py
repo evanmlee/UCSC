@@ -35,7 +35,7 @@ def parse_config(config_file="config/config.txt"):
     config.read(config_file)
     return config
 
-def create_run_directories(dir_vars,taxid_dict):
+def create_run_directories(dir_vars,taxid_dict,ucsc_taxid_dict):
     #Creates all directories from directory variables as well as intermediate directories
     exclude_labels = ['dataset_name','dataset_identifier']
     for dir_label in dir_vars:
@@ -44,7 +44,7 @@ def create_run_directories(dir_vars,taxid_dict):
             create_directory(dir_var)
     #tmp file storage (distance matrix calculations, etc)
     create_directory("tmp")
-    empty_directory("tmp")
+    # empty_directory("tmp")
     create_directory("tests/tmp")
     #creates defined directory structure for orthologs, allNCBI, bestNCBI parent directories
     ncbi_taxids = [k for k in taxid_dict.keys()]
@@ -72,8 +72,11 @@ def create_run_directories(dir_vars,taxid_dict):
         childpath = "{0}/{1}".format(dir_vars["summary_run"], child)
         create_directory(childpath)
         for taxid in ncbi_taxids:
-            ncbi_childpath = "{0}/{1}".format(childpath, taxid)
+            ncbi_childpath = "{0}/NCBI/{1}".format(childpath, taxid)
             create_directory(ncbi_childpath)
+        for taxid in ucsc_taxid_dict:
+            ucsc_childpath = "{0}/UCSC/{1}".format(childpath, taxid)
+            create_directory(ucsc_childpath)
 
 def directory_variables(config):
     """Generates appropriately named directory paths for run based on parameters in config.
@@ -136,6 +139,13 @@ def parse_ucsc_tax_config(config):
     ucsc_taxid_dict = dict(zip(ucsc_taxids,ucsc_spec_names))
     return ucsc_taxid_dict
 
+def parse_taxid_config_section(config,section):
+    tax_config =config[section]
+    taxids = [int(k) for k in tax_config.keys()]
+    spec_names = [tax_config[k].strip() for k in tax_config.keys()]
+    taxid_dict = dict(zip(taxids,spec_names))
+    return taxid_dict
+
 def config_initialization(config_path="config/config.txt"):
     """Reads config file, generates directories based on run parameters in config
 
@@ -144,16 +154,13 @@ def config_initialization(config_path="config/config.txt"):
     :return: dir_vars: dictionary from directory path labels to paths
     """
     config = parse_config(config_file=config_path)
-    dataset_config, taxonomy_config, directory_config = config["DATASET"], config["TAXONOMY"], config["DIRECTORY"]
-    taxids = [int(k) for k in taxonomy_config.keys()]
-    spec_names = [taxonomy_config[k].strip() for k in taxonomy_config.keys()]
-    taxid_dict = dict(zip(taxids,spec_names))
-
+    taxid_dict = parse_taxid_config_section(config,'TAXONOMY')
+    ucsc_taxid_dict = parse_taxid_config_section(config,'UCSC_TAXONOMY')
     dir_vars = directory_variables(config)
-    create_run_directories(dir_vars,taxid_dict)
+    create_run_directories(dir_vars,taxid_dict,ucsc_taxid_dict)
     config_copy_path = "{0}/config.txt".format(dir_vars['summary_run'])
     shutil.copy("config/config.txt",config_copy_path)
-    return config, taxid_dict, dir_vars
+    return config, taxid_dict, ucsc_taxid_dict, dir_vars
 
-config, taxid_dict, dir_vars = config_initialization()
-ucsc_taxid_dict = parse_ucsc_tax_config(config)
+
+config, taxid_dict, ucsc_taxid_dict, dir_vars = config_initialization()

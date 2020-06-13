@@ -134,12 +134,12 @@ def overall_summary_table(xref_table,
                                   'Test-Outgroup BLOSUM62', 'Test-Outgroup BLOSUM Alignment Z-Score',
                                   'Test-Outgroup BLOSUM US Z-Score','Outgroup Pairwise BLOSUM62']
     for ncbi_taxid in taxid_dict:
-        taxid_parent_dir = "{0}/conservation/{1}".format(summary_run_dir,ncbi_taxid)
+        taxid_parent_dir = "{0}/conservation/NCBI/{1}".format(summary_run_dir,ncbi_taxid)
         overall_df = pd.DataFrame(columns=overall_summary_col_labels)
         if modified_outpath:
             overall_summary_fpath = "{0}/{1}_summary.tsv".format(modified_outpath, ncbi_taxid)
         else:
-            overall_summary_fpath = "{0}/conservation/{1}_summary.tsv".format(summary_run_dir,ncbi_taxid)
+            overall_summary_fpath = "{0}/conservation/NCBI/{1}_summary.tsv".format(summary_run_dir,ncbi_taxid)
 
         tax_analysis_errors_fpath = "{0}/{1}_analysis_errors.tsv".format(summary_run_dir,ncbi_taxid)
         check_aes, analysis_error_df = load_errors(tax_analysis_errors_fpath, error_type="SequenceAnalysisError")
@@ -164,6 +164,9 @@ def overall_summary_table(xref_table,
                     continue
                 if check_aes and tid in analysis_error_df['tid'].unique():
                     print_errors(analysis_error_df,tid,error_type="SequenceAnalysisError")
+                    continue
+                if check_res and tid in record_error_df['tid'].unique():
+                    print_errors(record_error_df, tid)
                     continue
                 #Check for tid_subset and length_checks
                 if ((len(tid_subset) > 0 and tid in tid_subset) or len(tid_subset) == 0) \
@@ -192,9 +195,7 @@ def overall_summary_table(xref_table,
                         write_errors(tax_analysis_errors_fpath,tid,sae)
                         continue
                 else:
-                    if check_res and tid in record_error_df['tid'].unique():
-                        print_errors(record_error_df,tid)
-                    elif length_checks and np.isnan(lc_col[tid]):
+                    if length_checks and np.isnan(lc_col[tid]):
                         emsg = "No NCBI record data for taxid {0} present.".format(ncbi_taxid)
                         record_error = UCSCerrors.SequenceDataError(0,emsg)
                         write_errors(tax_record_errors_fpath,tid,record_error)
@@ -211,6 +212,119 @@ def overall_summary_table(xref_table,
                 formatted.insert(0, "Transcript ID", [tid] * len(formatted))
                 formatted = formatted.rename(columns={'JSD Z-Score':'JSD Alignment Z-Score','Test-Outgroup BLOSUM Z-Score':
                                                 'Test-Outgroup BLOSUM Alignment Z-Score'})
+                overall_df = overall_df.append(formatted, ignore_index=True, sort=False)
+
+        if not skip_overall:
+            overall_df.to_csv(overall_summary_fpath, sep='\t', float_format='%.5f')
+
+
+def ucsc_analysis_overall_summary(tid_subset=[], UCSC_tax_subset=[], clade="boreoeutheria",
+                          use_jsd_gap_penalty=True,force_recalc=False,
+                          modified_outpath="",length_checks_fpath="",skip_overall=True):
+    """Calculates summary analysis statistics for every gene symbol in gene_symbols.
+
+    :param (dict) dir_vars: Contains paths for run-specific directories, see directoryUtility.
+    :param (DataFrame) xref_table: Maps UCSC transcript IDs to NCBI Gene IDs
+    :param (dict) taxid_dict: maps NCBI taxids to species names
+    :param (array-like) tid_subset: If provided, will only attempt analysis for transcript_ids in tid_subset
+
+    :param (array-like) UCSC_tax_subset: If provided, limits UCSC sequence data to taxids in UCSC_tax_subset
+    :param use_jsd_gap_penalty: Determines if JSD calculations are performed with gap penalty or not. If you change
+    this, it is recommended to set force_recalc to True to avoid any inconsistencies between files calculated before
+    the change and after.
+    :param force_recalc: If True, recalculates and rewrites all summary statistic data.
+    :param modified_outpath: If provided, writes overall summary table to modified_outpath.
+    :param length_checks_fpath: If provided, reads booolean table from provided path and only runs gene_summary table
+    for records which passed length checks (see analysis_record_filter.py)
+    :return: None. Writes individual gene summary tables to appropriate output subdirectories and overall summary table
+    to [run_name]/summary/overall_summary.tsv Overall_summary table contains new columns corresponding to 1) gene symbol,
+    2) gene-specific MSA position, 3, 4) Unique Substitution Wide Z-scores for JSD and Test-Outgroup BLOSUM
+    MSA position,
+        """
+    from utility.UCSCerrors import load_errors, write_errors, print_errors
+    from utility import directoryUtility as dirutil
+    from conservation.analysis_calc import blos_df
+    from query import orthologUtility as orutil
+    taxid_dict, dir_vars, ucsc_taxid_dict = dirutil.taxid_dict, dirutil.dir_vars, dirutil.ucsc_taxid_dict
+    summary_run_dir,reorg_parent,ds_id = dir_vars['summary_run'],dir_vars['reorg_parent'],dir_vars['dataset_identifier']
+    # Read length checks information if necessary
+    if length_checks_fpath:
+        length_checks = True
+        lc_df = pd.read_csv(length_checks_fpath, sep='\t', index_col=0)
+    else:
+        length_checks = False
+    any_ncbi_xref_df = orutil.any_NCBI_xref()
+    # Columns for overall summary table
+    overall_summary_col_labels = ['Transcript ID', 'Gene', 'MSA Position', 'NCBI Species Position', 'NCBI Variant',
+                                  'NCBI Variant Count', 'Outgroup Variant', 'Outgroup Variant Count',
+                                  'Analysis Sequences', 'Gap Fraction',
+                                  'JSD', 'JSD Alignment Z-Score', 'JSD US Z-Score',
+                                  'Test-Outgroup BLOSUM62', 'Test-Outgroup BLOSUM Alignment Z-Score',
+                                  'Test-Outgroup BLOSUM US Z-Score', 'Outgroup Pairwise BLOSUM62']
+    for ncbi_taxid in ucsc_taxid_dict:
+        taxid_parent_dir = "{0}/conservation/UCSC/{1}".format(summary_run_dir, ncbi_taxid)
+        overall_df = pd.DataFrame(columns=overall_summary_col_labels)
+        if modified_outpath:
+            overall_summary_fpath = "{0}/{1}_summary.tsv".format(modified_outpath, ncbi_taxid)
+        else:
+            overall_summary_fpath = "{0}/conservation/UCSC/{1}_summary.tsv".format(summary_run_dir, ncbi_taxid)
+
+        tax_analysis_errors_fpath = "{0}/conservation/UCSC/{1}_analysis_errors.tsv".format(summary_run_dir, ncbi_taxid)
+        check_aes, analysis_error_df = load_errors(tax_analysis_errors_fpath, error_type="SequenceAnalysisError")
+        tax_record_errors_fpath = "{0}/conservation/UCSC/{1}_record_errors.tsv".format(summary_run_dir, ncbi_taxid)
+        check_res, record_error_df = load_errors(tax_record_errors_fpath)
+        if length_checks:
+            col_label = "{0}_check".format(ncbi_taxid)
+            lc_col = lc_df[col_label]
+        for tid, row in any_ncbi_xref_df.iterrows():
+            ncbi_hgid, hgnc_symbol = row['NCBI_gid'], row['HGNC_symbol']
+            if modified_outpath:
+                tid_subdir = "{0}/{1}/{2}".format(modified_outpath, ncbi_taxid, tid)
+            else:
+                tid_subdir = "{0}/{1}".format(taxid_parent_dir, tid)
+            out_summary_fpath = "{0}/{1}_summary.tsv".format(tid_subdir, tid)
+            out_records_fpath = "{0}/{1}_records.tsv".format(tid_subdir, tid)
+            # combined_fasta_fpath = "{0}/combined/{1}/{2}.fasta".format(bestNCBI_dir, ncbi_taxid, tid)
+            ucsc_fasta_fpath = "{0}/{1}/{2}/{3}.fasta".format(reorg_parent,ds_id,clade,tid)
+
+            if not os.path.exists(out_summary_fpath) or force_recalc:
+                if check_aes and tid in analysis_error_df['tid'].unique():
+                    print_errors(analysis_error_df, tid, error_type="SequenceAnalysisError")
+                    continue
+                if check_res and tid in record_error_df['tid'].unique():
+                    print_errors(record_error_df, tid)
+                    continue
+                # Check for tid_subset and length_checks
+                if ((len(tid_subset) > 0 and tid in tid_subset) or len(tid_subset) == 0) \
+                        and (length_checks and lc_col[tid] == True):
+                    try:
+                        dirutil.create_directory(tid_subdir)
+                        records_df, filtered_aln_path = ar_filt.filter_analysis_subset(ucsc_fasta_fpath,
+                                                                                       out_records_fpath,
+                                                                                       ncbi_taxid, test_source="UCSC")
+                        test_idx = records_df.loc[records_df['NCBI_taxid']==ncbi_taxid,:].index
+                        align_df = fasta.align_fasta_to_df(filtered_aln_path, ucsc_flag=True)
+                        summary_df = gene_summary_table(align_df, test_idx, blos_df, tid_subdir, tid, write_tables=True,
+                                                        use_jsd_gap_penalty=use_jsd_gap_penalty)
+                    except UCSCerrors.SequenceAnalysisError as sae:
+                        dirutil.remove_thing(tid_subdir)
+                        write_errors(tax_analysis_errors_fpath, tid, sae)
+                        continue
+                else:
+                    if length_checks and lc_col[tid] == False:
+                        emsg = "NCBI record data for taxid {0} failed record length quality checks.".format(ncbi_taxid)
+                        record_error = UCSCerrors.SequenceDataError(0, emsg)
+                        write_errors(tax_record_errors_fpath, tid, record_error)
+                    continue
+            else:
+                summary_df = load_summary_table(out_summary_fpath)
+            if not skip_overall:
+                formatted = summary_df.reset_index(drop=False)
+                formatted.insert(0, "Gene", [hgnc_symbol] * len(formatted))
+                formatted.insert(0, "Transcript ID", [tid] * len(formatted))
+                formatted = formatted.rename(
+                    columns={'JSD Z-Score': 'JSD Alignment Z-Score', 'Test-Outgroup BLOSUM Z-Score':
+                        'Test-Outgroup BLOSUM Alignment Z-Score'})
                 overall_df = overall_df.append(formatted, ignore_index=True, sort=False)
 
         if not skip_overall:
@@ -243,27 +357,22 @@ def write_background_gene_set(taxid,length_checks_fpath,xref_fpath,overwrite=Fal
     from query.orthologUtility import load_NCBI_xref_table
     taxid_label = "{0}_check".format(taxid)
     lc_df = pd.read_csv(length_checks_fpath,sep='\t',index_col=0)
-    lc_col = lc_df[taxid_label]
-    # display(lc_col)
-
-    # passed_df = lc_col[lc_col==True]
 
     passed_df = lc_df.loc[lc_df[taxid_label]==True,:]
-
     xref_df = load_NCBI_xref_table(xref_fpath)
     passed_symbols = xref_df.loc[passed_df.index,'HGNC_symbol'].unique()
     print("Taxid: {0}".format(taxid))
     print("Number transcripts passing length checks: {0}".format(len(passed_df)))
     print("Number passed gene symbols: {0}".format(len(passed_symbols)))
     print("Number transcripts failing length checks: {0}".format(len(lc_df.loc[lc_df[taxid_label]==False,:])))
-    geneset_dir = "{0}/conservation/gene_sets".format(dir_vars['summary_run'])
+    geneset_dir = "{0}/conservation/gene_sets/{1}".format(dir_vars['summary_run'],taxid)
     create_directory(geneset_dir)
     bg_fpath = "{0}/{1}_analysis_genes.txt".format(geneset_dir,taxid)
     write_gene_set_txt(passed_symbols,bg_fpath,overwrite=overwrite)
 
 def overall_suppl_calculations(taxid,check_percentiles=[]):
-    overall_summary_fpath = "{0}/conservation/{1}_summary.tsv".format(dir_vars['summary_run'],taxid)
-    suppl_outpath = "{0}/conservation/{1}_nongaps_suppl.tsv".format(dir_vars['summary_run'],taxid)
+    overall_summary_fpath = "{0}/conservation/NCBI/{1}_summary.tsv".format(dir_vars['summary_run'],taxid)
+    suppl_outpath = "{0}/conservation/NCBI/{1}_nongaps_suppl.tsv".format(dir_vars['summary_run'],taxid)
     overall_df = load_overall_summary_table(overall_summary_fpath)
     nongaps_df = filter_gap_positions(overall_df,gap_fraction_thresh=0.5)
     # us_jsd, us_blos = ac.calc_z_scores(overall_df['JSD']), ac.calc_z_scores(overall_df['Test-Outgroup BLOSUM62'])
@@ -300,21 +409,12 @@ def overall_suppl_calculations(taxid,check_percentiles=[]):
         # display(nongaps_df[p_feature])
         pthresh_df = nongaps_df.loc[nongaps_df[p_feature],:]
         pthresh_gene_set = pthresh_df['Gene'].dropna().unique()
-        gene_set_dir = "{0}/conservation/gene_sets".format(dir_vars['summary_run'])
+        gene_set_dir = "{0}/conservation/gene_sets/{1}".format(dir_vars['summary_run'],taxid)
         create_directory(gene_set_dir)
         pthresh_fpath = "{0}/{1}_{2}tile_genes.txt".format(gene_set_dir,taxid,p)
         write_gene_set_txt(pthresh_gene_set,pthresh_fpath,overwrite=True)
 
     nongaps_df.to_csv(suppl_outpath,sep='\t',float_format='%.4f')
-
-
-    # jsd_usz_min, jsd_usz_max = overall_df['JSD US Z-Score'].min(), overall_df['JSD US Z-Score'].max()
-    # blos_usz_min, blos_usz_max = overall_df['Test-Outgroup BLOSUM US Z-Score'].min(), \
-    #                              overall_df['Test-Outgroup BLOSUM US Z-Score'].max()
-    # trans_jsd_usz = (overall_df['JSD US Z-Score'] - jsd_usz_min) / (jsd_usz_max - jsd_usz_min)
-    # trans_blos_usz = (blos_usz_max - overall_df['Test-Outgroup BLOSUM US Z-Score']) / (blos_usz_max - blos_usz_min)
-
-
 
 def gene_statistics_table(overall_summary_fpath):
     overall_table = load_overall_summary_table(overall_summary_fpath)
@@ -322,11 +422,8 @@ def gene_statistics_table(overall_summary_fpath):
     symbol_set = overall_table['Gene'].unique()
     i = 0
     iteration_limit = 5
-    # test_symbol_set = ["TTC22","ATP5MC1"]
-    # symbol_set = test_symbol_set
     gs_columns = ["Gene","n_uniques","sum_JSD_sq","sum_JSD_BLOS"]
     gene_stats_df = pd.DataFrame(columns=gs_columns)
-    # for symbol in symbol_set:
     jsd_usz_min, jsd_usz_max = overall_table['JSD US Z-Score'].min(),overall_table['JSD US Z-Score'].max()
     blos_usz_min, blos_usz_max = overall_table['Test-Outgroup BLOSUM US Z-Score'].min(), \
                                overall_table['Test-Outgroup BLOSUM US Z-Score'].max()
@@ -355,19 +452,13 @@ def gene_statistics_table(overall_summary_fpath):
             norm_blos = (3- blos_srs)/7
             jsd_blos_feature= jsd_srs*norm_blos
             jsd_sq = jsd_srs*jsd_srs
-            # jsd_blos_zscore = -symbol_df['JSD US Z-Score']*symbol_df['Test-Outgroup BLOSUM US Z-Score']
             trans_jsd_usz = (symbol_df['JSD US Z-Score'] - jsd_usz_min)/(jsd_usz_max-jsd_usz_min)
-            # trans_blos_usz = (symbol_df['Test-Outgroup BLOSUM US Z-Score'] - blos_usz_min) / (blos_usz_max- blos_usz_min)
             trans_blos_usz = (blos_usz_max-symbol_df['Test-Outgroup BLOSUM US Z-Score'])/(blos_usz_max-blos_usz_min)
-            # display(trans_jsd_usz)
-            # display(trans_blos_usz)
             jsd_blos_feature = trans_jsd_usz*trans_blos_usz
             test_cols = ["JSD_tf", "Blos_tf", "JSD-Blos_tf"]
             test_dict = dict(zip(test_cols,[trans_jsd_usz,trans_blos_usz,jsd_blos_feature]))
             test_df = pd.DataFrame(test_dict)
             display(test_df)
-            # print(sum(jsd_blos_feature.dropna()))
-            # print(sum(jsd_sq))
 
 
 def main():
@@ -375,10 +466,16 @@ def main():
     from query import orthologUtility as orutil
     xref_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
     xref_df = orutil.load_NCBI_xref_table(xref_fpath)
-    length_checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
-    overall_summary_table(xref_df, length_checks_fpath=length_checks_fpath,skip_overall=True)
-    # test_fpath = "{0}/conservation/9994_summary.tsv".format(dir_vars['summary_run'])
-    # gene_statistics_table(test_fpath)
+
+    NCBI_CONSERVATION = False
+    if NCBI_CONSERVATION:
+        length_checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
+        overall_summary_table(xref_df, length_checks_fpath=length_checks_fpath,skip_overall=False)
+
+    UCSC_CONSERVATION = True
+    if UCSC_CONSERVATION:
+        ucsc_lc_fpath = "{0}/ucsc_length_checks.tsv".format(dir_vars['combined_run'])
+        ucsc_analysis_overall_summary(length_checks_fpath=ucsc_lc_fpath,skip_overall=True)
 
 if __name__ == "__main__":
     main()

@@ -232,7 +232,7 @@ def JSD_BLOS_dist_plots(taxid,overwrite=False):
     summary_run = dir_vars['summary_run']
     uc_dir = "{0}/figures/uniques_conservation/{1}".format(summary_run,taxid)
     print("Unique Conservation Dir: {0}".format(uc_dir))
-    overall_tsv_fpath = "{0}/conservation/{1}_summary.tsv".format(summary_run,taxid)
+    overall_tsv_fpath = "{0}/conservation/NCBI/{1}_summary.tsv".format(summary_run,taxid)
     overall_df = cs.load_overall_summary_table(overall_tsv_fpath)
 
     non_gaps = cs.filter_gap_positions(overall_df)
@@ -274,10 +274,18 @@ def JSD_BLOS_dist_plots(taxid,overwrite=False):
 
 def main():
     from matplotlib import rcParams
+    from conservation import conservation_summary as cs
     rcParams.update({'figure.autolayout': True})
     generate_figures_dir()
     for taxid in taxid_dict:
-        JSD_BLOS_dist_plots(taxid,overwrite=True)
+        JSD_BLOS_dist_plots(taxid,overwrite=False)
+
+    lc_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
+    xref_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
+    for taxid in taxid_dict:
+        cs.write_background_gene_set(taxid, lc_fpath, xref_fpath, overwrite=True)
+        cs.overall_suppl_calculations(taxid, check_percentiles=[95, 97, 99])
+
 
 if __name__ == "__main__":
     main()

@@ -4,7 +4,7 @@ import pandas as pd
 from IPython.display import display
 import os
 
-from utility.directoryUtility import ucsc_taxid_dict
+from utility.directoryUtility import ucsc_taxid_dict, taxid_dict, dir_vars
 from utility import fastaUtility as fautil
 from conservation import analysis_record_filter as ar_filt
 from Bio import SeqIO
@@ -39,7 +39,6 @@ class analysisRecordFilterTest(unittest.TestCase):
         for tid in rest_df["NCBI_taxid"]:
             self.assertTrue(tid not in records_df["NCBI_taxid"].unique())
 
-        from utility.directoryUtility import ucsc_taxid_dict
         for taxid in ucsc_taxid_dict:
             self.assertTrue(taxid not in records_df["NCBI_taxid"].unique())
 
@@ -71,8 +70,33 @@ class analysisRecordFilterTest(unittest.TestCase):
         fasta_ids = [fasta.id for fasta in SeqIO.parse(filtered_outpath ,'fasta')]
         self.assertTrue(len(fasta_ids) == len(records_df))
 
-        with pd.option_context('display.max_columns',None):
-            display(records_df)
+        #Check that test record appears at end of fasta
+        self.assertTrue(fasta_ids[-1] == "ENST00000002596.6_speTri2")
+
+    def test_gene_summary_ucsc_analysis(self):
+        # Test Gene Summary table for ATP5G1 for speTri UCSC data
+        from conservation import conservation_summary as cs, analysis_calc as ac
+        test_combined_fpath = "tests/test_data/ucsc_raw/boreoeutheria/ENST00000355938.9.fasta"
+        test_records_fpath = "tests/tmp/ENST00000355938.9_43179records.tsv"
+        test_filtered_path = "tests/tmp/ENST00000355938.9_43179filtered.fasta"
+        full_test_df = fautil.load_UCSC_NCBI_df(test_combined_fpath)
+        for path in [test_records_fpath ,test_filtered_path]:
+            if os.path.exists(path):
+                os.remove(path)
+        test_taxid, test_source = 43179,"UCSC"
+        test_tid = "ENST00000355938.9"
+        records_df, filtered_alnpath = ar_filt.filter_analysis_subset(test_combined_fpath ,test_records_fpath,test_taxid,
+                                                                      test_source=test_source,
+                                                                      filtered_outpath=test_filtered_path)
+        self.assertTrue(os.path.exists(filtered_alnpath))
+        test_idx = records_df.loc[records_df['NCBI_taxid'] == test_taxid, :].index
+        align_df = fautil.align_fasta_to_df(filtered_alnpath, ucsc_flag=True)
+        summary_df = cs.gene_summary_table(align_df, test_idx, ac.blos_df, "tests/tmp", test_tid)
+        display(summary_df)
+
+        from query import orthologUtility as orutil
+        any_NCBI_xref = orutil.any_NCBI_xref()
+        display(any_NCBI_xref)
 
     def test_drop_incomplete_records(self):
         with pd.option_context('display.max_columns' ,None):
@@ -118,7 +142,6 @@ class analysisRecordFilterTest(unittest.TestCase):
             self.assertTrue(len(sub_thresh_len) == 0)
 
     def test_id_record_check(self):
-        from utility.directoryUtility import taxid_dict, dir_vars
         from utility.NCBIfilter import CLOSEST_EVO_TAXIDS, SECONDARY_EVO_TAXIDS, length_metrics_df
         from numpy import isnan
         from query import orthologUtility as orutil
@@ -228,7 +251,6 @@ class analysisRecordFilterTest(unittest.TestCase):
     @unittest.skip("Speed test comparing filtered/ unfiltered input file for identity matrix loading. Faster method "
                    "used in id_length_check")
     def test_id_length_speed(self):
-        from utility.directoryUtility import taxid_dict, dir_vars
         import time
         from utility.NCBIfilter import CLOSEST_EVO_TAXIDS, SECONDARY_EVO_TAXIDS, length_metrics_df
 
@@ -270,7 +292,7 @@ class analysisRecordFilterTest(unittest.TestCase):
         print(id_dm)
 
     def test_lc_calcs(self):
-        from utility.directoryUtility import taxid_dict, dir_vars
+
         lm_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
         ar_filt.length_metric_checks(lm_fpath, pass_how='most')
         lc_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
@@ -286,3 +308,8 @@ class analysisRecordFilterTest(unittest.TestCase):
         for tid in all_fail_tids:
             tid_row = lc_df.loc[tid]
             print(tid_row)
+
+    def test_ucsc_lc(self):
+        ucsc_lc_df = ar_filt.ucsc_length_checks()
+        with pd.option_context('display.max_columns',None):
+            display(ucsc_lc_df)

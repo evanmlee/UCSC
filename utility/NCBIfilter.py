@@ -235,22 +235,16 @@ def filter_ortholog_data(force_overwrite_tid_subset=[],clade="all",alt_lm_fpath=
     :return:
     """
     from utility.directoryUtility import taxid_dict,dir_vars
-    xref_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
-    xref_table = orutil.load_NCBI_xref_table(xref_fpath)
-    NCBI_gid_table = xref_table.loc[:, ["stable_gene_id", "NCBI_gid", "HGNC_symbol"]]
+
     if alt_lm_fpath:
         lm_fpath = alt_lm_fpath
     else:
         lm_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
     lm_df, ordered_ucsc_taxids = length_metrics_df(lm_fpath,taxid_dict)
-
-    orthologs_fpath = "{0}/orthologs_final.tsv".format(dir_vars['orthologs_parent'])
-    ortholog_id_table = orutil.load_orthologs_table(orthologs_fpath)
-    non_empty_orthoIDs = ortholog_id_table.dropna(how='all')
-    some_NCBI_IDs = NCBI_gid_table.loc[(NCBI_gid_table["NCBI_gid"].isin(non_empty_orthoIDs.index.astype(str))), :]
+    any_NCBI_IDs = orutil.any_NCBI_xref()
     fpaths, check_flags, error_dfs = UCSCerrors.load_all_taxid_errors(dir_vars, taxid_dict, log_type='record',
                                                                       error_type="SequenceDataError",error_codes=[0,2])
-    for ucsc_tid, row in some_NCBI_IDs.iterrows():
+    for ucsc_tid, row in any_NCBI_IDs.iterrows():
         ncbi_hgid = row["NCBI_gid"]
         for taxid in taxid_dict:
             combined_best_fpath = "{0}/combined/{1}/{2}.fasta".format(dir_vars['bestNCBI_parent'],taxid,ucsc_tid)
