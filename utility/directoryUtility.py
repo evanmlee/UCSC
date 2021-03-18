@@ -104,10 +104,9 @@ def directory_variables(config):
     :return: dir_vars: dictionary of directory variable labels to directory variable paths
     """
     dataset_config, taxonomy_config, directory_config = config["DATASET"], config["TAXONOMY"], config["DIRECTORY"]
-    hg_version,seq_format,dataset_name = [dataset_config[k] for k in dataset_config.keys()]
+    hg_version,seq_format,dataset_name,clade_level = [dataset_config[k] for k in dataset_config.keys()]
     reorg_parent = directory_config["ReorganizedDataDir"]
     dataset_identifier = "{0}{1}_{2}".format(hg_version, seq_format, dataset_name)
-
     combined_parent = directory_config["CombinedAlignmentDir"]
     run_name = directory_config["CombinedRunSubDir"]
 
@@ -121,11 +120,11 @@ def directory_variables(config):
     bestNCBI_parent = "{0}/bestNCBI".format(combined_run)
     summary_run = "summary/{0}/{1}".format(dataset_identifier,run_name)
 
-    dir_variable_labels = ["reorg_parent","dataset_name","dataset_identifier",
+    dir_variable_labels = ["reorg_parent","dataset_name","dataset_identifier","clade_level",
                            "orthologs_parent", "orthologs_aa", "orthologs_nuc",
                            "xref_xml","xref_summary",
                           "combined_run","UCSC_raw_parent","allNCBI_parent","bestNCBI_parent","summary_run"]
-    dir_values = [reorg_parent,dataset_name,dataset_identifier,
+    dir_values = [reorg_parent,dataset_name,dataset_identifier,clade_level,
                   orthologs_parent, orthologs_aa_seq, orthologs_nuc_seq,
                   xref_xml,xref_summary,
                   combined_run,UCSC_raw_parent,allNCBI_parent,bestNCBI_parent,summary_run]

@@ -23,7 +23,7 @@ import matplotlib as mpl
 import seaborn as sns
 
 from IPython.display import display
-from utility.directoryUtility import taxid_dict,dir_vars
+from utility.directoryUtility import taxid_dict,ucsc_taxid_dict,dir_vars
 
 mpl.rcParams['figure.dpi'] = 200
 mpl.rcParams['savefig.dpi'] = 200
@@ -178,9 +178,12 @@ def generate_figures_dir():
         for taxid in taxid_dict:
             tax_subpath = "{0}/{1}".format(subdir_path,taxid)
             dirutil.create_directory(tax_subpath)
+        for taxid in ucsc_taxid_dict:
+            tax_subpath = "{0}/{1}".format(subdir_path,taxid)
+            dirutil.create_directory(tax_subpath)
 
 
-def JSD_BLOS_scatter(taxid,jsd_a,blos_a,alpha,xlabel="JSD",ylabel="Normalized Test-Outgroup BLOSUM62",
+def JSD_BLOS_scatter(taxid,jsd_a,blos_a,alpha,taxid_dict,xlabel="JSD",ylabel="Normalized Test-Outgroup BLOSUM62",
                      jsd_threshs=[],blos_threshs=[],scatter_outpath=""):
     """Generic function for JSD/BLOSUM scatter plot. If threshs are provided, plot percentile lines. If scatter_outpath
     is provided, sace figure to path. """
@@ -209,7 +212,7 @@ def JSD_BLOS_scatter(taxid,jsd_a,blos_a,alpha,xlabel="JSD",ylabel="Normalized Te
     else:
         plt.show()
 
-def metric_hist_plot(taxid, metric_label,metric_a, threshs=[],hist_fpath=""):
+def metric_hist_plot(taxid, metric_label,metric_a,taxid_dict, threshs=[],hist_fpath=""):
     plt.figure()
     plt.hist(metric_a,bins=40)
     plt.xlabel(metric_label)
@@ -226,13 +229,17 @@ def metric_hist_plot(taxid, metric_label,metric_a, threshs=[],hist_fpath=""):
         plt.show()
 
 
-def JSD_BLOS_dist_plots(taxid,overwrite=False):
+def JSD_BLOS_dist_plots(taxid,overwrite=False,source_db="NCBI"):
     from conservation import conservation_summary as cs
     from conservation import analysis_calc as ac
+    if source_db == "NCBI":
+        tax_dict = taxid_dict
+    elif source_db == "UCSC":
+        tax_dict = ucsc_taxid_dict
     summary_run = dir_vars['summary_run']
     uc_dir = "{0}/figures/uniques_conservation/{1}".format(summary_run,taxid)
     print("Unique Conservation Dir: {0}".format(uc_dir))
-    overall_tsv_fpath = "{0}/conservation/NCBI/{1}_summary.tsv".format(summary_run,taxid)
+    overall_tsv_fpath = "{0}/conservation/{1}/{2}_summary.tsv".format(summary_run,source_db,taxid)
     overall_df = cs.load_overall_summary_table(overall_tsv_fpath)
 
     non_gaps = cs.filter_gap_positions(overall_df)
@@ -256,20 +263,20 @@ def JSD_BLOS_dist_plots(taxid,overwrite=False):
     print(blos_threshs)
     jsd_hist_fpath = "{0}/figures/uniques_conservation/{1}/{1}_jsd_hist.png".format(summary_run, taxid)
     if not os.path.exists(jsd_hist_fpath) or overwrite:
-        metric_hist_plot(taxid,"JSD",ng_jsd,threshs=jsd_threshs,hist_fpath=jsd_hist_fpath)
+        metric_hist_plot(taxid,"JSD",ng_jsd,tax_dict,threshs=jsd_threshs,hist_fpath=jsd_hist_fpath)
     blos_hist_fpath = "{0}/figures/uniques_conservation/{1}/{1}_blos_hist.png".format(summary_run, taxid)
     if not os.path.exists(blos_hist_fpath) or overwrite:
-        metric_hist_plot(taxid,"Normalized Test-Outgroup BLOSUM62",ng_norm_blos,threshs=blos_threshs,hist_fpath=blos_hist_fpath)
+        metric_hist_plot(taxid,"Normalized Test-Outgroup BLOSUM62",ng_norm_blos,tax_dict,threshs=blos_threshs,hist_fpath=blos_hist_fpath)
     jsd_blos_hist_fpath = "{0}/figures/uniques_conservation/{1}/{1}_jsd-blos_hist.png".format(summary_run, taxid)
     if not os.path.exists(jsd_blos_hist_fpath) or overwrite:
-        metric_hist_plot(taxid, "Normalized JSD*BLOSUM62", ng_jsd_blos, threshs=ng_jsd_blos_threshs,
+        metric_hist_plot(taxid, "Normalized JSD*BLOSUM62", ng_jsd_blos,tax_dict, threshs=ng_jsd_blos_threshs,
                          hist_fpath=jsd_blos_hist_fpath)
 
     # jsd_usz, blos_usz = overall_df['JSD US Z-Score'],overall_df['Test-Outgroup BLOSUM US Z-Score']
     # ax1 = sns.kdeplot(vals)
     scatter_outpath = "{0}/figures/uniques_conservation/{1}/{1}_norm_scatter.png".format(summary_run, taxid)
     if not os.path.exists(scatter_outpath) or overwrite:
-        JSD_BLOS_scatter(taxid,ng_jsd,ng_norm_blos,alpha,jsd_threshs=jsd_threshs,blos_threshs=blos_threshs,
+        JSD_BLOS_scatter(taxid,ng_jsd,ng_norm_blos,alpha,tax_dict,jsd_threshs=jsd_threshs,blos_threshs=blos_threshs,
                          scatter_outpath=scatter_outpath)
 
 def main():
@@ -278,13 +285,21 @@ def main():
     rcParams.update({'figure.autolayout': True})
     generate_figures_dir()
     for taxid in taxid_dict:
-        JSD_BLOS_dist_plots(taxid,overwrite=False)
+        JSD_BLOS_dist_plots(taxid,overwrite=False,source_db="NCBI")
+    for taxid in ucsc_taxid_dict:
+        JSD_BLOS_dist_plots(taxid,overwrite=False,source_db="UCSC")
 
     lc_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
+    ucsc_lc_fpath = "{0}/ucsc_length_checks.tsv".format(dir_vars['combined_run'])
     xref_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
-    for taxid in taxid_dict:
-        cs.write_background_gene_set(taxid, lc_fpath, xref_fpath, overwrite=True)
-        cs.overall_suppl_calculations(taxid, check_percentiles=[95, 97, 99])
+    gene_set_overwrite = False
+    if gene_set_overwrite:
+        for taxid in taxid_dict:
+            cs.write_background_gene_set(taxid, lc_fpath, xref_fpath, overwrite=True)
+            cs.overall_suppl_calculations(taxid, check_percentiles=[95, 97, 99])
+        for taxid in ucsc_taxid_dict:
+            cs.write_background_gene_set(taxid, ucsc_lc_fpath, xref_fpath, overwrite=True)
+            cs.overall_suppl_calculations(taxid, check_percentiles=[95, 97, 99],source_db="UCSC")
 
 
 if __name__ == "__main__":

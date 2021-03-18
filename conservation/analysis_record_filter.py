@@ -142,7 +142,7 @@ def filter_analysis_subset(fasta_fpath,records_tsv_fpath,test_taxid,test_source=
         fautil.filter_fasta_infile(records_df.index,fasta_fpath,outfile_path=filtered_outpath)
     return records_df, filtered_outpath
 
-def id_length_check(combined_fasta_fpath,lm_row,check_taxids,len_tol=0.05,min_id_tol=0.15,max_id_tol=0.3,
+def id_length_check(combined_fasta_fpath,lm_row,check_taxids,len_tol=0.05,min_id_tol=0.15,max_id_tol=0.35,
                     ce_id_adjust=1.25,quiet=True):
     """For a given species represented by taxid, runs length - identity checks for record validity and returns a dict
     mapping check labels to True/ False values.
@@ -251,7 +251,7 @@ def length_checks_df(lc_fpath,taxids,check_cols=True):
     return check_df
 
 
-def length_metric_checks(length_metrics_fpath,len_tol=0.05,min_id_tol=0.15,max_id_tol=0.3,ce_id_adjust=1.25,
+def length_metric_checks(length_metrics_fpath,len_tol=0.05,min_id_tol=0.15,max_id_tol=0.35,ce_id_adjust=1.25,
                          evo_how='all',pass_how='most',
                          recalc_spec_checks=False,recalc_pass_checks=False):
     """Returns a DataFrame check_df with transcript_id index and columns corresponding to taxonomy IDs and values
@@ -331,7 +331,8 @@ def length_metric_checks(length_metrics_fpath,len_tol=0.05,min_id_tol=0.15,max_i
                 elif pass_how=='most':
                     pass_check = (pass_ratio >= 0.5) and not ncbi_only_check
                     check_df.loc[ucsc_tid, check_col] = pass_check
-        spec_indiv_checks.to_csv(spec_indiv_checks_fpath,sep='\t')
+        if recalc_spec_checks:
+            spec_indiv_checks.to_csv(spec_indiv_checks_fpath,sep='\t')
 
     check_df.to_csv(checks_fpath,sep='\t')
     param_labels = ["min_id_tol","max_id_tol","closest_evo_thresh_adjust","evo_how","pass_how"]
@@ -368,11 +369,14 @@ def ucsc_length_checks(clade_level="boreoeutheria",len_tol=0.7,length_how="non_z
 
 if __name__ == "__main__":
     pd.options.display.max_columns = None
-    update_checks = True
-    if update_checks:
+    update_ncbi_checks = False
+    if update_ncbi_checks:
         length_metrics_fpath = "{0}/length_metrics.tsv".format(dir_vars['combined_run'])
         # length_metric_checks(length_metrics_fpath,recalc_pass_checks=True,recalc_spec_checks=True)
-        # length_metric_checks(length_metrics_fpath, recalc_pass_checks=True, recalc_spec_checks=False)
+        length_metric_checks(length_metrics_fpath, recalc_pass_checks=True, recalc_spec_checks=False)
+    update_ucsc_checks = True
+    if update_ucsc_checks:
+        ucsc_lc_df = ucsc_length_checks()
     checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
     check_df = pd.read_csv(checks_fpath, sep='\t', index_col=0)
     for col in check_df:

@@ -89,7 +89,7 @@ def load_summary_table(summary_fpath):
     return summary_df
 
 def overall_summary_table(xref_table,
-                          tid_subset=[], UCSC_tax_subset=[],
+                          tid_subset=[], UCSC_tax_subset=[],taxid_subset=[],
                           use_jsd_gap_penalty=True,force_recalc=False,
                           modified_outpath="",length_checks_fpath="",skip_overall=True):
     """Calculates summary analysis statistics for every gene symbol in gene_symbols.
@@ -133,7 +133,9 @@ def overall_summary_table(xref_table,
                                   'JSD', 'JSD Alignment Z-Score','JSD US Z-Score',
                                   'Test-Outgroup BLOSUM62', 'Test-Outgroup BLOSUM Alignment Z-Score',
                                   'Test-Outgroup BLOSUM US Z-Score','Outgroup Pairwise BLOSUM62']
-    for ncbi_taxid in taxid_dict:
+    if not taxid_subset:
+        taxid_subset = taxid_dict.keys()
+    for ncbi_taxid in taxid_subset:
         taxid_parent_dir = "{0}/conservation/NCBI/{1}".format(summary_run_dir,ncbi_taxid)
         overall_df = pd.DataFrame(columns=overall_summary_col_labels)
         if modified_outpath:
@@ -191,7 +193,9 @@ def overall_summary_table(xref_table,
                         summary_df = gene_summary_table(align_df,ncbi_idx,blos_df,tid_subdir,tid,write_tables=True,
                                                         use_jsd_gap_penalty=use_jsd_gap_penalty)
                     except UCSCerrors.SequenceAnalysisError as sae:
-                        dirutil.remove_thing(tid_subdir)
+                        exon_diffs_fpath = "{0}/{1}_exondiffs.tsv".format(tid_subdir, tid)
+                        if not os.path.exists(exon_diffs_fpath):
+                            dirutil.remove_thing(tid_subdir)
                         write_errors(tax_analysis_errors_fpath,tid,sae)
                         continue
                 else:
@@ -318,7 +322,7 @@ def ucsc_analysis_overall_summary(tid_subset=[], UCSC_tax_subset=[], clade="bore
                     continue
             else:
                 summary_df = load_summary_table(out_summary_fpath)
-            if not skip_overall:
+            if not skip_overall and not os.path.exists(overall_summary_fpath):
                 formatted = summary_df.reset_index(drop=False)
                 formatted.insert(0, "Gene", [hgnc_symbol] * len(formatted))
                 formatted.insert(0, "Transcript ID", [tid] * len(formatted))
@@ -327,7 +331,7 @@ def ucsc_analysis_overall_summary(tid_subset=[], UCSC_tax_subset=[], clade="bore
                         'Test-Outgroup BLOSUM Alignment Z-Score'})
                 overall_df = overall_df.append(formatted, ignore_index=True, sort=False)
 
-        if not skip_overall:
+        if not skip_overall and not os.path.exists(overall_summary_fpath):
             overall_df.to_csv(overall_summary_fpath, sep='\t', float_format='%.5f')
 
 def load_overall_summary_table(overall_summary_fpath):
@@ -370,9 +374,13 @@ def write_background_gene_set(taxid,length_checks_fpath,xref_fpath,overwrite=Fal
     bg_fpath = "{0}/{1}_analysis_genes.txt".format(geneset_dir,taxid)
     write_gene_set_txt(passed_symbols,bg_fpath,overwrite=overwrite)
 
-def overall_suppl_calculations(taxid,check_percentiles=[]):
-    overall_summary_fpath = "{0}/conservation/NCBI/{1}_summary.tsv".format(dir_vars['summary_run'],taxid)
-    suppl_outpath = "{0}/conservation/NCBI/{1}_nongaps_suppl.tsv".format(dir_vars['summary_run'],taxid)
+def overall_suppl_calculations(taxid,check_percentiles=[],source_db="NCBI"):
+    if source_db == "NCBI":
+        overall_summary_fpath = "{0}/conservation/NCBI/{1}_summary.tsv".format(dir_vars['summary_run'],taxid)
+        suppl_outpath = "{0}/conservation/NCBI/{1}_nongaps_suppl.tsv".format(dir_vars['summary_run'],taxid)
+    elif source_db == "UCSC":
+        overall_summary_fpath = "{0}/conservation/UCSC/{1}_summary.tsv".format(dir_vars['summary_run'], taxid)
+        suppl_outpath = "{0}/conservation/UCSC/{1}_nongaps_suppl.tsv".format(dir_vars['summary_run'], taxid)
     overall_df = load_overall_summary_table(overall_summary_fpath)
     nongaps_df = filter_gap_positions(overall_df,gap_fraction_thresh=0.5)
     # us_jsd, us_blos = ac.calc_z_scores(overall_df['JSD']), ac.calc_z_scores(overall_df['Test-Outgroup BLOSUM62'])
@@ -467,15 +475,15 @@ def main():
     xref_fpath = "{0}/NCBI_xrefs.tsv".format(dir_vars['xref_summary'])
     xref_df = orutil.load_NCBI_xref_table(xref_fpath)
 
-    NCBI_CONSERVATION = False
+    NCBI_CONSERVATION = True
     if NCBI_CONSERVATION:
         length_checks_fpath = "{0}/length_checks.tsv".format(dir_vars['combined_run'])
-        overall_summary_table(xref_df, length_checks_fpath=length_checks_fpath,skip_overall=False)
+        overall_summary_table(xref_df, taxid_subset=[9994],length_checks_fpath=length_checks_fpath,skip_overall=False)
 
     UCSC_CONSERVATION = True
     if UCSC_CONSERVATION:
         ucsc_lc_fpath = "{0}/ucsc_length_checks.tsv".format(dir_vars['combined_run'])
-        ucsc_analysis_overall_summary(length_checks_fpath=ucsc_lc_fpath,skip_overall=True)
+        ucsc_analysis_overall_summary(length_checks_fpath=ucsc_lc_fpath,skip_overall=False)
 
 if __name__ == "__main__":
     main()
